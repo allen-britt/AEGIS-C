@@ -1,18 +1,34 @@
-from fastapi import FastAPI, Request, HTTPException
+"""
+AEGIS‑C Honeynet Service
+=========================
+
+Deception APIs with canary telemetry and standardized guard.
+"""
+
+import os
+import sys
+from fastapi import FastAPI, Request, Depends
 from pydantic import BaseModel
 from datetime import datetime, timezone
 import uuid
 import json
-import logging
 from typing import Dict, List, Optional, Any
 import hashlib
 import time
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Add shared module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+from service_guard import setup_service_guard, record_detection_score, logger, require_api_key
 
-app = FastAPI(title="AEGIS‑C Honeynet")
+# Service Configuration
+SERVICE_NAME = "honeynet"
+SERVICE_PORT = int(os.getenv("HONEYPOT_PORT", "8012"))
+
+# Initialize FastAPI App
+app = FastAPI(title="AEGIS‑C Honeynet Service")
+
+# Setup standardized guard
+setup_service_guard(app, SERVICE_NAME)
 
 # Canary token generator and tracker
 CANARY_TOKENS = set()
@@ -321,17 +337,6 @@ async def check_canary(canary_token: str):
     exists = canary_token in CANARY_TOKENS
     return {"exists": exists, "token": canary_token}
 
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {
-        "ok": True,
-        "service": "honeynet",
-        "datasets": len(HONEYPOT_DATA),
-        "canaries": len(CANARY_TOKENS),
-        "telemetry_events": len(TELEMETRY_BUFFER)
-    }
-
 @app.get("/")
 async def root():
     """Root endpoint with service info."""
@@ -341,8 +346,34 @@ async def root():
         "description": "Fake APIs with telemetry and canary tokens",
         "endpoints": {
             "datasets": "/api/datasets",
-            "telemetry": "/telemetry/recent",
-            "stats": "/telemetry/stats",
-            "health": "/health"
-        }
+            "models": "/api/models",
+            "canaries": "/canaries",
+            "telemetry": "/telemetry",
+            "health": "/health",
+            "metrics": "/metrics",
+            "secure_ping": "/secure/ping"
+        },
+        "datasets": len(HONEYPOT_DATA),
+        "canaries": len(CANARY_TOKENS),
+        "telemetry_events": len(TELEMETRY_BUFFER)
     }
+
+# Protected endpoints
+@app.post("/secure/canaries/generate", dependencies=[Depends(require_api_key)])
+async def secure_generate_canary():
+    """Protected canary generation endpoint"""
+    return await generate_canary()
+
+@app.get("/secure/telemetry", dependencies=[Depends(require_api_key)])
+async def secure_get_telemetry():
+    """Protected telemetry endpoint"""
+    return await get_telemetry()
+
+@app.delete("/secure/telemetry", dependencies=[Depends(require_api_key)])
+async def secure_clear_telemetry():
+    """Protected telemetry clearing endpoint"""
+    return await clear_telemetry()
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=SERVICE_PORT)

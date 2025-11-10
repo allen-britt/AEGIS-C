@@ -1,14 +1,30 @@
-from fastapi import FastAPI
+"""
+AEGIS‑C Fingerprint Service
+============================
+
+AI model fingerprinting and similarity scoring with standardized guard.
+"""
+
+import os
+import sys
+from fastapi import FastAPI, Depends
 from pydantic import BaseModel
 import numpy as np
-import logging
 from typing import Dict, List
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Add shared module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+from service_guard import setup_service_guard, record_detection_score, logger, require_api_key
 
-app = FastAPI(title="AEGIS‑C Fingerprint")
+# Service Configuration
+SERVICE_NAME = "fingerprint"
+SERVICE_PORT = int(os.getenv("FINGERPRINT_PORT", "8011"))
+
+# Initialize FastAPI App
+app = FastAPI(title="AEGIS‑C Fingerprint Service")
+
+# Setup standardized guard
+setup_service_guard(app, SERVICE_NAME)
 
 # Baseline response vectors for known model families
 # In production, these would be built from extensive testing
@@ -188,11 +204,6 @@ async def list_baselines():
     """List all available baselines."""
     return {"baselines": list(BASELINES.keys())}
 
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {"ok": True, "service": "fingerprint"}
-
 @app.get("/")
 async def root():
     """Root endpoint with service info."""
@@ -204,8 +215,25 @@ async def root():
             "fingerprint": "/fingerprint",
             "baseline_add": "/baseline/add",
             "baseline_list": "/baseline/list",
-            "health": "/health"
+            "health": "/health",
+            "metrics": "/metrics",
+            "secure_ping": "/secure/ping"
         },
         "probe_count": len(PROBES),
         "baseline_count": len(BASELINES)
     }
+
+# Protected endpoints
+@app.post("/secure/fingerprint", dependencies=[Depends(require_api_key)])
+async def secure_fingerprint(payload: FingerprintRequest):
+    """Protected fingerprinting endpoint"""
+    return await fingerprint_model(payload)
+
+@app.post("/secure/baseline/add", dependencies=[Depends(require_api_key)])
+async def secure_add_baseline(family: str, vector: List[float]):
+    """Protected baseline addition endpoint"""
+    return await add_baseline(family, vector)
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=SERVICE_PORT)

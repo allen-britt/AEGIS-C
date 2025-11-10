@@ -1,301 +1,243 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from pydantic import BaseModel
-import hashlib
-import logging
-import time
-import uuid
-from typing import Optional, Dict, Any
+"""
+AEGIS‑C Provenance Service
+===========================
+
+C2PA signing/verification stub with standardized guard.
+"""
+
+import os
+import sys
 import json
+import hashlib
+import time
+from datetime import datetime, timezone
+from fastapi import FastAPI, Depends, HTTPException
+from pydantic import BaseModel
+from typing import Dict, List, Optional, Any
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Add shared module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+from service_guard import setup_service_guard, record_detection_score, logger, require_api_key
 
-app = FastAPI(title="AEGIS‑C Provenance")
+# Service Configuration
+SERVICE_NAME = "provenance"
+SERVICE_PORT = int(os.getenv("PROVENANCE_PORT", "8014"))
 
-class SignRequest(BaseModel):
+# Initialize FastAPI App
+app = FastAPI(title="AEGIS‑C Provenance Service")
+
+# Setup standardized guard
+setup_service_guard(app, SERVICE_NAME)
+
+# Data models
+class ClaimData(BaseModel):
     content: str
+    author: str
+    timestamp: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
-class SignResult(BaseModel):
-    algorithm: str
-    signature: str
-    timestamp: str
-    content_hash: str
-    verification_url: str
+class SignatureRequest(BaseModel):
+    claim: ClaimData
+    private_key: Optional[str] = None  # In production, use proper key management
 
-class VerifyRequest(BaseModel):
+class VerificationRequest(BaseModel):
     content: str
     signature: str
-    algorithm: str = "sha256"
+    public_key: Optional[str] = None
 
-class VerifyResult(BaseModel):
-    verified: bool
-    computed_hash: str
-    provided_signature: str
+class SignatureResult(BaseModel):
+    signature: str
+    claim_hash: str
     timestamp: str
+    verified: bool
 
-# In-memory signature storage (in production, use secure storage)
-SIGNATURE_REGISTRY: Dict[str, Dict] = {}
+class VerificationResult(BaseModel):
+    valid: bool
+    claim_hash: str
+    verification_timestamp: str
+    details: Dict[str, Any]
 
-def compute_hash(content: str, algorithm: str = "sha256") -> str:
-    """Compute hash of content."""
-    if algorithm == "sha256":
-        return hashlib.sha256(content.encode('utf-8')).hexdigest()
-    elif algorithm == "sha512":
-        return hashlib.sha512(content.encode('utf-8')).hexdigest()
-    else:
-        raise ValueError(f"Unsupported algorithm: {algorithm}")
+# In-memory signature storage (replace with proper database in production)
+SIGNATURE_DB: Dict[str, SignatureResult] = {}
 
-def create_c2pa_manifest(content_hash: str, metadata: Dict = None) -> Dict:
-    """Create a C2PA-style manifest (stub implementation)."""
-    manifest = {
-        "claim_generator": "AEGIS-C Provenance Service v1.0.0",
-        "claim_generator_version": "1.0.0",
-        "assertions": [
-            {
-                "label": "stds.schema-org.CreativeWork",
-                "data": {
-                    "@context": "https://schema.org",
-                    "@type": "CreativeWork",
-                    "identifier": content_hash,
-                    "dateCreated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    "author": "AEGIS-C System",
-                    "metadata": metadata or {}
-                }
-            },
-            {
-                "label": "c2pa.actions",
-                "data": {
-                    "actions": [
-                        {
-                            "type": "c2pa.created",
-                            "when": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                            "softwareAgent": "AEGIS-C Provenance Service"
-                        }
-                    ]
-                }
-            }
-        ],
-        "signature_info": {
-            "algorithm": "sha256",
-            "hash": content_hash
-        }
-    }
-    return manifest
-
-@app.post("/sign/text", response_model=SignResult)
-async def sign_text(request: SignRequest):
-    """Sign text content with provenance metadata."""
-    start_time = time.time()
-    
-    # Compute content hash
-    content_hash = compute_hash(request.content)
-    
-    # Create manifest
-    manifest = create_c2pa_manifest(content_hash, request.metadata)
-    
-    # Create signature (in this stub, the hash is the signature)
-    signature = content_hash
-    
-    # Store signature record
-    record_id = str(uuid.uuid4())
-    SIGNATURE_REGISTRY[record_id] = {
-        "signature": signature,
-        "content_hash": content_hash,
-        "manifest": manifest,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "algorithm": "sha256"
+def generate_claim_hash(claim: ClaimData) -> str:
+    """Generate hash for claim data"""
+    claim_data = {
+        "content": claim.content,
+        "author": claim.author,
+        "timestamp": claim.timestamp or datetime.now(timezone.utc).isoformat(),
+        "metadata": claim.metadata or {}
     }
     
-    processing_time = (time.time() - start_time) * 1000
+    claim_json = json.dumps(claim_data, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(claim_json.encode()).hexdigest()
+
+def sign_claim(claim: ClaimData) -> SignatureResult:
+    """Sign a claim (stub implementation)"""
+    claim_hash = generate_claim_hash(claim)
+    timestamp = datetime.now(timezone.utc).isoformat()
     
-    result = SignResult(
-        algorithm="sha256",
+    # In production, use actual cryptographic signing
+    # For now, create a mock signature
+    signature_data = f"{claim_hash}:{timestamp}:AEGISC_STUB_SIGNATURE"
+    signature = hashlib.sha256(signature_data.encode()).hexdigest()
+    
+    result = SignatureResult(
         signature=signature,
-        timestamp=SIGNATURE_REGISTRY[record_id]["timestamp"],
-        content_hash=content_hash,
-        verification_url=f"/verify/text/{record_id}"
+        claim_hash=claim_hash,
+        timestamp=timestamp,
+        verified=True  # In production, this would be the result of actual signing
     )
     
-    logger.info(f"Text signed: hash={content_hash[:16]}..., time={processing_time:.1f}ms")
+    # Store signature
+    SIGNATURE_DB[signature] = result
     
+    logger.info(f"Claim signed", claim_hash=claim_hash, author=claim.author)
     return result
 
-@app.post("/sign/file", response_model=SignResult)
-async def sign_file(file: UploadFile = File(...), metadata: Optional[str] = None):
-    """Sign uploaded file content with provenance metadata."""
-    start_time = time.time()
+def verify_signature(content: str, signature: str) -> VerificationResult:
+    """Verify a signature (stub implementation)"""
+    timestamp = datetime.now(timezone.utc).isoformat()
     
-    # Read file content
-    content = await file.read()
-    content_str = content.decode('utf-8', errors='ignore')
+    # Check if signature exists in our database
+    if signature not in SIGNATURE_DB:
+        return VerificationResult(
+            valid=False,
+            claim_hash="unknown",
+            verification_timestamp=timestamp,
+            details={"error": "Signature not found in database"}
+        )
     
-    # Parse metadata if provided
-    parsed_metadata = None
-    if metadata:
-        try:
-            parsed_metadata = json.loads(metadata)
-        except json.JSONDecodeError:
-            logger.warning("Invalid metadata JSON provided")
+    stored_result = SIGNATURE_DB[signature]
     
-    # Add file info to metadata
-    file_metadata = {
-        "filename": file.filename,
-        "content_type": file.content_type,
-        "size_bytes": len(content)
-    }
-    if parsed_metadata:
-        file_metadata.update(parsed_metadata)
+    # In production, perform actual cryptographic verification
+    # For now, just check if it exists in our database
+    valid = stored_result.verified
     
-    # Compute hash and create signature
-    content_hash = compute_hash(content_str)
-    manifest = create_c2pa_manifest(content_hash, file_metadata)
-    signature = content_hash
-    
-    # Store signature record
-    record_id = str(uuid.uuid4())
-    SIGNATURE_REGISTRY[record_id] = {
-        "signature": signature,
-        "content_hash": content_hash,
-        "manifest": manifest,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "algorithm": "sha256",
-        "filename": file.filename
+    details = {
+        "original_timestamp": stored_result.timestamp,
+        "signature_algorithm": "SHA256_STUB",
+        "verification_method": "database_lookup"
     }
     
-    processing_time = (time.time() - start_time) * 1000
+    logger.info(f"Signature verification", valid=valid, signature=signature[:16] + "...")
     
-    result = SignResult(
-        algorithm="sha256",
-        signature=signature,
-        timestamp=SIGNATURE_REGISTRY[record_id]["timestamp"],
-        content_hash=content_hash,
-        verification_url=f"/verify/file/{record_id}"
+    return VerificationResult(
+        valid=valid,
+        claim_hash=stored_result.claim_hash,
+        verification_timestamp=timestamp,
+        details=details
     )
-    
-    logger.info(f"File signed: {file.filename}, hash={content_hash[:16]}..., time={processing_time:.1f}ms")
-    
-    return result
 
-@app.post("/verify/text", response_model=VerifyResult)
-async def verify_text(request: VerifyRequest):
-    """Verify text content against provided signature."""
-    start_time = time.time()
-    
-    # Compute hash of provided content
-    computed_hash = compute_hash(request.content, request.algorithm)
-    
-    # Check if signature matches
-    verified = computed_hash == request.signature
-    
-    processing_time = (time.time() - start_time) * 1000
-    
-    result = VerifyResult(
-        verified=verified,
-        computed_hash=computed_hash,
-        provided_signature=request.signature,
-        timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    )
-    
-    logger.info(f"Text verification: {verified}, time={processing_time:.1f}ms")
-    
-    return result
-
-@app.post("/verify/file")
-async def verify_file(file: UploadFile = File(...), signature: str = ""):
-    """Verify uploaded file against provided signature."""
-    start_time = time.time()
-    
-    # Read file content
-    content = await file.read()
-    content_str = content.decode('utf-8', errors='ignore')
-    
-    # Compute hash
-    computed_hash = compute_hash(content_str)
-    
-    # Check verification
-    verified = computed_hash == signature
-    
-    processing_time = (time.time() - start_time) * 1000
-    
-    result = VerifyResult(
-        verified=verified,
-        computed_hash=computed_hash,
-        provided_signature=signature,
-        timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    )
-    
-    logger.info(f"File verification: {file.filename}, verified={verified}, time={processing_time:.1f}ms")
-    
-    return result
-
-@app.get("/verify/record/{record_id}")
-async def verify_record(record_id: str):
-    """Verify a stored signature record."""
-    if record_id not in SIGNATURE_REGISTRY:
-        raise HTTPException(status_code=404, detail="Signature record not found")
-    
-    record = SIGNATURE_REGISTRY[record_id]
-    
-    return {
-        "record_id": record_id,
-        "verified": True,  # In stub implementation, we assume stored records are valid
-        "manifest": record["manifest"],
-        "timestamp": record["timestamp"],
-        "algorithm": record["algorithm"]
-    }
-
-@app.get("/signatures/list")
-async def list_signatures(limit: int = 50):
-    """List recent signature records."""
-    records = list(SIGNATURE_REGISTRY.items())[-limit:] if limit else list(SIGNATURE_REGISTRY.items())
-    
-    return {
-        "total_signatures": len(SIGNATURE_REGISTRY),
-        "showing": len(records),
-        "records": [
-            {
-                "record_id": record_id,
-                "timestamp": record["timestamp"],
-                "algorithm": record["algorithm"],
-                "filename": record.get("filename", "text content")
-            }
-            for record_id, record in records
-        ]
-    }
-
-@app.delete("/signatures/clear")
-async def clear_signatures():
-    """Clear all signature records (for testing)."""
-    SIGNATURE_REGISTRY.clear()
-    logger.info("All signature records cleared")
-    return {"success": True, "message": "All signatures cleared"}
-
-@app.get("/health")
-async def health():
-    """Health check endpoint."""
-    return {
-        "ok": True,
-        "service": "provenance",
-        "signature_count": len(SIGNATURE_REGISTRY),
-        "algorithms": ["sha256", "sha512"]
-    }
-
+# API Endpoints
 @app.get("/")
 async def root():
-    """Root endpoint with service info."""
+    """Root endpoint"""
     return {
         "service": "AEGIS‑C Provenance",
         "version": "1.0.0",
-        "description": "Content provenance signing and verification (C2PA stub)",
+        "description": "C2PA signing/verification stub service",
         "endpoints": {
-            "sign_text": "/sign/text",
-            "sign_file": "/sign/file",
-            "verify_text": "/verify/text",
-            "verify_file": "/verify/file",
-            "verify_record": "/verify/record/{record_id}",
-            "list_signatures": "/signatures/list",
-            "health": "/health"
-        }
+            "sign": "/sign",
+            "verify": "/verify",
+            "signatures": "/signatures",
+            "health": "/health",
+            "metrics": "/metrics",
+            "secure_ping": "/secure/ping"
+        },
+        "stored_signatures": len(SIGNATURE_DB)
     }
+
+@app.post("/sign")
+async def sign_claim_endpoint(request: SignatureRequest):
+    """Sign a claim with provenance data"""
+    try:
+        # Set timestamp if not provided
+        if not request.claim.timestamp:
+            request.claim.timestamp = datetime.now(timezone.utc).isoformat()
+        
+        result = sign_claim(request.claim)
+        
+        logger.info(f"Claim signed successfully", author=request.claim.author)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Claim signing error: {e}")
+        raise
+
+@app.post("/verify")
+async def verify_signature_endpoint(request: VerificationRequest):
+    """Verify a signature"""
+    try:
+        result = verify_signature(request.content, request.signature)
+        
+        logger.info(f"Signature verification completed", valid=result.valid)
+        return result
+        
+    except Exception as e:
+        logger.error(f"Signature verification error: {e}")
+        raise
+
+@app.get("/signatures")
+async def list_signatures():
+    """List all stored signatures"""
+    return {
+        "total_signatures": len(SIGNATURE_DB),
+        "signatures": [
+            {
+                "signature": sig[:16] + "...",  # Truncated for security
+                "claim_hash": result.claim_hash,
+                "timestamp": result.timestamp,
+                "verified": result.verified
+            }
+            for sig, result in SIGNATURE_DB.items()
+        ]
+    }
+
+@app.get("/signatures/{signature_hash}")
+async def get_signature_details(signature_hash: str):
+    """Get details for a specific signature"""
+    # Find signature by hash (simplified search)
+    for sig, result in SIGNATURE_DB.items():
+        if signature_hash in sig or signature_hash == result.claim_hash:
+            return {
+                "signature": sig[:16] + "...",
+                "claim_hash": result.claim_hash,
+                "timestamp": result.timestamp,
+                "verified": result.verified
+            }
+    
+    raise HTTPException(status_code=404, detail="Signature not found")
+
+# Protected endpoints
+@app.post("/secure/sign", dependencies=[Depends(require_api_key)])
+async def secure_sign_claim(request: SignatureRequest):
+    """Protected claim signing endpoint"""
+    return await sign_claim_endpoint(request)
+
+@app.post("/secure/verify", dependencies=[Depends(require_api_key)])
+async def secure_verify_signature(request: VerificationRequest):
+    """Protected signature verification endpoint"""
+    return await verify_signature_endpoint(request)
+
+@app.delete("/secure/signatures/{signature_hash}", dependencies=[Depends(require_api_key)])
+async def delete_signature(signature_hash: str):
+    """Delete a signature (admin only)"""
+    # Find and delete signature
+    to_delete = None
+    for sig, result in SIGNATURE_DB.items():
+        if signature_hash in sig or signature_hash == result.claim_hash:
+            to_delete = sig
+            break
+    
+    if not to_delete:
+        raise HTTPException(status_code=404, detail="Signature not found")
+    
+    del SIGNATURE_DB[to_delete]
+    logger.info(f"Signature deleted", signature_hash=signature_hash)
+    
+    return {"success": True, "message": "Signature deleted successfully"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=SERVICE_PORT)

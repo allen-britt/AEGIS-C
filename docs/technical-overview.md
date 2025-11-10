@@ -1,94 +1,107 @@
 # AEGIS‑C Technical Overview
 
-## 1. Purpose
-AEGIS‑C (Adversarial‑AI Engagement, Guarding, Intelligence & Shielding — Counter) provides a lawful, mission‑safe counter‑AI platform. The system detects adversary AI activity, applies friction, diverts hostile agents, protects our own pipelines, and enforces provenance with human oversight.
+## Architecture
 
-## 2. Rules of Engagement
-- **Defensive only** – observe, label, verify, deceive with synthetic content; no destructive actions.
-- **Privacy first** – log only operationally necessary metadata; redact by default.
-- **Human‑on‑the‑loop** – no autonomous operational steps without signed provenance and dual review.
+AEGIS‑C (Adversarial‑AI Engagement, Guarding, Intelligence & Shielding — Counter) is a microservices-based counter-AI platform designed to detect, analyze, and defend against adversarial AI threats with adaptive intelligence.
 
-## 3. Reference Architecture
+### 🧠 Intelligence Core
+
+#### Brain Gateway (8030)
+- **Adaptive Risk Scoring**: Fuses 10+ signals into probability with explainable features
+- **Policy Engine**: Intelligent action selection using multi-armed bandits
+- **Universal Client**: Easy integration for any service (`assess()` + `decide()`)
+- **Active Learning**: Human-in-the-loop improvement from analyst corrections
+
+#### Smart Components
+- **Causal Explainer**: Root cause analysis with incident pattern recognition
+- **RAG Firewall**: Semantic content sanitization and injection detection
+- **Adaptive Honeynet**: Personality morphing based on attacker behavior
+- **Probe Smith**: Automated fingerprinting probe generation and evolution
+- **Hardware Intent**: Correlates hardware anomalies with model impact
+
+### Core Components
+
+#### Detection Services
+- **Detector Service (8010)**: AI-generated text and agent detection (brain-enabled)
+- **Fingerprint Service (8011)**: Model fingerprinting and similarity scoring (brain-enabled)
+- **Hardware Sentinel (8016)**: GPU monitoring and anomaly detection (brain-enabled)
+
+#### Defense Services  
+- **Honeynet Service (8012)**: Deception APIs with canary telemetry (brain-enabled)
+- **Admission Service (8013)**: Data poisoning guard and quarantine (brain-enabled)
+- **Provenance Service (8014)**: C2PA signing/verification
+
+#### Intelligence Services
+- **Intelligence Service (8018)**: Real-time threat intelligence collection
+- **Vulnerability Database (8019)**: CVE and exploit tracking
+- **Cold War Service (8015)**: Campaign analytics and defense intelligence
+
+#### Purple Team
+- **Discovery Service (8017)**: Reconnaissance and offensive simulation
+
+#### Infrastructure
+- **PostgreSQL**: Primary data storage
+- **Redis**: Caching and session management  
+- **Neo4j**: Graph database for relationship analysis
+- **MinIO**: Object storage for artifacts
+- **NATS**: Message queuing and events
+
+## Security Architecture
+
+### Authentication
+- API key-based authentication for all services
+- Default API key: `changeme-dev`
+- Protected endpoints require `x-api-key` header
+
+### Monitoring & Observability
+- Structured JSON logging with `structlog`
+- Prometheus metrics for all services
+- Health checks on `/health` endpoint
+- Request metrics on `/metrics` endpoint
+
+### Data Flow
+1. **Ingestion**: Requests enter via API gateway or direct service calls
+2. **Detection**: Core detection services analyze for AI threats
+3. **Intelligence**: Threat intelligence provides context and enrichment
+4. **Response**: Defense services apply appropriate countermeasures
+5. **Telemetry**: All actions logged and monitored
+
+## Deployment
+
+### Local Development
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
 ```
-                           ┌───────────────────────────────────┐
-                           │           Counter‑AI UI           │
-                           │  (Ops Console / Reports / API)    │
-                           └───────────────┬───────────────────┘
-                                           │
-                          Alerts/Findings  │  Tasks/Approvals
-                                           │
-┌──────────────────────────┼────────────────┼─────────────────────────┐
-│ Ingress Layer            │ Analysis Layer │ Protection/Deception    │
-│ (Gate & Sense)           │ (Detect/Attrib)│ (Deter/Degrade/Learn)   │
-├──────────────────────────┼────────────────┼─────────────────────────┤
-│ ■ Gateway & Friction     │ ■ Artifact      │ ■ Honeynet API + KB     │
-│   (CAPTCHA, canaries,    │   Detector      │   (fake open data,      │
-│   moving‑target DOM)     │   (text/img/    │   instrumented)         │
-│                          │    audio/code)  │ ■ Canary propagation    │
-│ ■ Provenance Verifier    │ ■ Agent/Bot     │   & beacon checks       │
-│   (C2PA, sig)            │   Profiler      │ ■ Moving‑target layout  │
-│                          │   (timing,      │   templates             │
-│ ■ Probe Orchestrator     │    lat/entropy) │                         │
-│   (challenges)           │ ■ Fingerprinting│ ■ Data Admission Control │
-│                          │   (challenge    │   (guardrails for our   │
-│                          │   response sim) │   training/RAG)         │
-├──────────────────────────┴────────────────┴─────────────────────────┤
-│                       Data & Telemetry Services                      │
-│   Event Bus (NATS) • Feature Store • Object Store • Graph DB (Neo4j) │
-│   • Postgres (case data) • Redis (caching) • MinIO (artifacts)       │
-└───────────────────────────────────────────────────────────────────────┘
-```
 
-## 4. Service Catalog
-| Service | Port | Purpose | Key Tech |
-|---------|------|---------|----------|
-| `gateway` | 8000 (planned) | Reverse proxy, friction, canaries | FastAPI + middleware |
-| `detector` | 8010 | Text & agent heuristics, AI artifact detection | FastAPI, heuristics, ML |
-| `fingerprint` | 8011 | Challenge probes, similarity scoring | FastAPI, NumPy |
-| `honeynet` | 8012 | Deception APIs with telemetry | FastAPI |
-| `admission` | 8013 | Data poisoning guard, quarantine workflow | FastAPI, scikit‑learn |
-| `provenance` | 8014 | C2PA signing & verification (stub) | FastAPI, hashlib |
-| `coldwar` | 8015 | Campaign analytics & defense intelligence | FastAPI |
-| `hardware` | 8016 | Hardware security sentinel (GPU/CPU) | FastAPI, GPUtil, psutil |
-| `console` | 8501 | Streamlit operations console | Streamlit |
-| `offensive toolkit` | 8502 | Streamlit red‑team simulator | Streamlit |
-| `tests/test_platform.py` | — | Health & regression testing | Python unittest |
+### Production Considerations
+- External database clusters
+- Load balancers and API gateways
+- Secret management systems
+- Monitoring and alerting platforms
+- Backup and disaster recovery
 
-## 5. Data Flows
-1. **Ingress** – Operators feed artifacts or agents arrive via gateway. Provenance checks ensure authenticity prior to analysis.
-2. **Detection & Attribution** – Detector scores inputs; fingerprint service challenges suspect models; coldwar service correlates campaigns.
-3. **Protection & Deception** – Admission control quarantines suspect data; honeynet diverts hostile agents while logging telemetry.
-4. **Hardware Sentinel** – Hardware service inventories GPUs/CPUs, monitors telemetry, simulates attacks, and generates adaptive defenses.
-5. **Offensive Simulation** – Offensive toolkit executes controlled multi‑vector campaigns against local services for readiness testing.
-6. **Console** – Presents health, alerts, campaign analytics, provenance results, hardware posture, and operator playbooks.
+## API Design
 
-## 6. Deployment & Operations
-- **Local Development** – Use `start.bat`/`start.sh` or run each service via `uvicorn`. Streamlit console & offensive toolkit launched separately.
-- **Containerization** – `docker-compose.yml` provisions Postgres, Redis, Neo4j, MinIO, NATS for production parity.
-- **Environments** – DEV (component testing), DT (developmental testing), OT (operational testing), PROD (controlled ops). DT/OT test plan is documented separately.
-- **Monitoring** – Each FastAPI service exposes `/health`. Coldwar campaign telemetry and hardware sentinel metrics feed the console.
+All services follow consistent API patterns:
+- `GET /health` - Service health check
+- `GET /metrics` - Prometheus metrics
+- `POST /secure/*` - Protected endpoints requiring API key
+- Standardized request/response models
+- Comprehensive error handling
 
-## 7. Security Controls
-- **Network Segmentation** – Expose services internally; gateway front‑doors external traffic.
-- **Access Control** – Streamlit console behind VPN or SSO in production; provenance signatures required before execution.
-- **Logging** – Honeynet logs requests with canary tokens; coldwar & hardware services log attack/defense results; auditing defined in `docs/runbook.md`.
-- **Hardware Policies** – Enforce ECC, monitor thermal/memory anomalies, support adaptive defenses (quotas, throttling, resets).
+## Extensibility
 
-## 8. Compliance & Governance
-- Aligns with mission ROE; any deception content remains synthetic.
-- Provenance enforcement ensures human approval prior to operational output.
-- DT/OT criteria ensure readiness before deployment (see `docs/dtot-evaluation.md`).
+The platform is designed for extensibility:
+- Plugin architecture for new detection algorithms
+- Modular service design for easy addition of capabilities
+- Standardized interfaces for third-party integrations
+- Configuration-driven behavior
 
-## 9. Extensibility Roadmap
-- Replace provenance stub with full C2PA integration and HSM key storage.
-- Expand detector to multimodal ML models and ensemble scoring.
-- Integrate Next.js console with RBAC and case management.
-- Build automated hardware risk scorer with Bayesian model and bandit policy engine.
-
-## 10. Document Map
-- `docs/technical-overview.md` (this file)
-- `docs/threat-model.md`
-- `docs/api-contracts.md`
-- `docs/runbook.md`
-- `docs/dtot-evaluation.md` (DT/OT plan)
-- `README.md` (quick start)
+*This document will be expanded with detailed technical specifications, deployment guides, and integration patterns.*

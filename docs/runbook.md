@@ -1,239 +1,322 @@
-# AEGIS‑C Operator Runbook
+# AEGIS‑C Runbook
 
-## Mission Rules of Engagement (ROE)
+## Operational Procedures
 
-- **Strictly Defensive**: Detection, labeling, provenance verification only
-- **No Unauthorized Access**: No disruption or sabotage of external systems
-- **Privacy First**: No PII collection beyond legitimate logs; redact by default
-- **Human‑on‑the‑Loop**: No automated operational actions without dual review
+### Service Management
 
-## Quick Reference
+#### Starting Services
+```bash
+# Start all services
+docker-compose up -d
 
-### Service Endpoints
-- **Detector**: `localhost:8010` - AI artifact and agent detection
-- **Fingerprinting**: `localhost:8011` - Model fingerprinting
-- **Honeynet**: `localhost:8012` - Fake APIs with telemetry
-- **Admission Control**: `localhost:8013` - Data poisoning prevention
-- **Provenance**: `localhost:8014` - Content signing/verification
-- **Console**: `localhost:8501` - Operations dashboard
+# Start specific service
+docker-compose up -d detector
 
-### Triage Workflow
-
-#### 1. Incoming Artifact Analysis
-```
-1. Paste/upload content to Console → Detection tab
-2. Review detection score and signals
-3. If AI‑generated (score ≥ 0.6):
-   - Run fingerprinting probes
-   - Check provenance if available
-   - Create case file
-4. If hostile agent suspected:
-   - Route to honeynet for observation
-   - Monitor for canary activations
+# Start with custom environment
+docker-compose --env-file .env.production up -d
 ```
 
-#### 2. Data Admission Control
-```
-1. Bulk screen new datasets via Admission Control tab
-2. Review quarantined samples manually
-3. Approve/deny based on:
-   - Anomaly score (> 0.7 = auto reject)
-   - Suspicious patterns detected
-   - Business context
-4. Document decision rationale
-```
+#### Stopping Services
+```bash
+# Stop all services
+docker-compose down
 
-#### 3. Provenance Verification
-```
-1. Check inbound content badges:
-   - 🟢 Green = Verified provenance
-   - 🟡 Yellow = Unknown provenance  
-   - 🔴 Red = Verification failed
-2. For 🔴 content:
-   - Investigate source
-   - Check for tampering
-   - Consider quarantine
+# Stop specific service
+docker-compose stop detector
+
+# Force stop and remove volumes
+docker-compose down -v
 ```
 
-## Alert Levels
+#### Service Health Checks
+```bash
+# Check all service health
+docker-compose ps
 
-| Level | Score | Action | Timeline |
-|-------|-------|--------|----------|
-| 🟢 LOW | < 0.4 | Monitor | Routine |
-| 🟡 MEDIUM | 0.4-0.6 | Investigate | Within 24h |
-| 🟠 HIGH | 0.6-0.8 | Priority Review | Within 4h |
-| 🔴 CRITICAL | > 0.8 | Immediate Action | < 1h |
+# Check specific service logs
+docker-compose logs -f detector
 
-## Decision Matrix
+# Check service health endpoint
+curl http://localhost:8010/health
+```
 
-### Detection Verdicts
-- **likely_ai** (≥ 0.7): Flag for review, fingerprint, consider quarantine
-- **uncertain** (0.4-0.6): Additional analysis required
-- **likely_human** (< 0.4): Proceed normally
+### Monitoring and Alerting
 
-### Admission Control
-- **accept** (< 0.4): Clear for production use
-- **quarantine** (0.4-0.7): Manual review required
-- **reject** (> 0.7): Block and investigate
+#### Key Metrics to Monitor
+- Service uptime and health status
+- Request rates and response times
+- Error rates and types
+- Resource utilization (CPU, memory, GPU)
+- Detection scores and verdicts
+- Threat intelligence updates
 
-### Canary Detection
-- **Canary Hit**: Immediate investigation
-- **Pattern Match**: Review source IP and behavior
-- **False Positive**: Update canary patterns
+#### Alert Thresholds
+- Service health check failures: Alert immediately
+- Error rate > 5%: Alert within 5 minutes
+- Response time > 2 seconds: Alert within 10 minutes
+- GPU temperature > 85°C: Alert immediately
+- Detection score > 0.8: Alert immediately
 
-## Standard Operating Procedures
+#### Log Analysis
+```bash
+# View structured logs
+docker-compose logs -f detector | jq '.'
 
-### SOP 1: AI Artifact Detection
-1. **Input**: Text, code, or media content
-2. **Processing**: Run through detector service
-3. **Analysis**: Review score, signals, patterns
-4. **Decision**: Accept/flag/quarantine based on matrix
-5. **Documentation**: Log decision with rationale
+# Filter by severity
+docker-compose logs detector | grep 'ERROR'
 
-### SOP 2: Model Fingerprinting
-1. **Preparation**: Load current probe set
-2. **Execution**: Present probes to target model
-3. **Collection**: Record all responses
-4. **Analysis**: Run fingerprinting service
-5. **Attribution**: Document model family and confidence
+# Monitor authentication failures
+docker-compose logs detector | grep 'Unauthorized'
+```
 
-### SOP 3: Honeynet Monitoring
-1. **Setup**: Deploy fake endpoints with canaries
-2. **Monitoring**: Watch telemetry for unusual activity
-3. **Detection**: Alert on canary activations
-4. **Analysis**: Profile attacker TTPs
-5. **Response**: Document and update defenses
+### Incident Response
 
-### SOP 4: Data Admission Control
-1. **Screening**: Run all new data through admission control
-2. **Review**: Manually inspect quarantined items
-3. **Decision**: Approve clean data, reject suspicious
-4. **Documentation**: Maintain audit trail of all decisions
+#### Level 1: Service Degradation
+**Symptoms**:
+- Increased response times
+- Elevated error rates
+- Partial service unavailability
 
-### SOP 5: Provenance Verification
-1. **Signing**: Sign all outbound content
-2. **Verification**: Check all inbound content signatures
-3. **Validation**: Confirm content integrity and source
-4. **Action**: Flag or reject invalid provenance
-
-## Incident Response
-
-### Type 1: AI Poisoning Attempt
-1. **Detection**: Admission control flags suspicious data
-2. **Containment**: Quarantine affected datasets
-3. **Analysis**: Identify attack vectors and patterns
-4. **Recovery**: Clean datasets and update filters
-5. **Prevention**: Update detection rules and baselines
-
-### Type 2: Model Exfiltration
-1. **Detection**: Canary token activation in honeynet
-2. **Tracking**: Monitor source IP and behavior patterns
-3. **Analysis**: Profile attacker capabilities and intent
-4. **Defense**: Update honeypots and canary placement
-5. **Reporting**: Document incident for threat intelligence
-
-### Type 3: Provenance Tampering
-1. **Detection**: Verification failure on signed content
-2. **Investigation**: Analyze tampering method and extent
-3. **Impact**: Assess affected content and systems
-4. **Recovery**: Re-sign affected content
-5. **Hardening**: Update signing processes and validation
-
-## Metrics and KPIs
-
-### Detection Performance
-- **True Positive Rate**: ≥ 85% AI artifacts correctly identified
-- **False Positive Rate**: ≤ 15% human content flagged as AI
-- **Mean Time to Detect**: ≤ 90 seconds per artifact
-
-### Admission Control
-- **Poisoning Detection Rate**: ≥ 90% malicious samples caught
-- **False Quarantine Rate**: ≤ 10% clean samples quarantined
-- **Processing Speed**: ≤ 5 seconds per sample
-
-### Honeynet Effectiveness
-- **Canary Detection Rate**: 100% canary activations identified
-- **Session Depth**: ≥ 3 requests per automated bot
-- **Telemetry Coverage**: 100% requests logged and analyzed
-
-### Provenance Operations
-- **Signing Success Rate**: 100% outbound content signed
-- **Verification Accuracy**: 100% signature validation
-- **Tamper Detection**: 100% modifications identified
-
-## Maintenance Tasks
-
-### Daily
-- Review all high-priority alerts
-- Check service health and performance
-- Update detection baselines with new data
-
-### Weekly
-- Analyze detection trends and patterns
-- Update honeypot canaries (rotate tokens)
-- Review and update probe sets
-- Generate performance reports
-
-### Monthly
-- Comprehensive model retraining
-- Update threat intelligence feeds
-- Review and update ROE documentation
-- Conduct security audit of all services
-
-## Troubleshooting
-
-### Common Issues
-
-#### Service Unavailable
+**Actions**:
 1. Check service health endpoints
-2. Review service logs for errors
-3. Restart affected services if needed
-4. Verify network connectivity
+2. Review recent deployments
+3. Check resource utilization
+4. Restart affected services if needed
 
-#### False Positives
-1. Review detection thresholds
-2. Update baseline data
-3. Fine-tune algorithm parameters
-4. Document patterns for future reference
+```bash
+# Restart service
+docker-compose restart detector
 
-#### Performance Issues
-1. Monitor resource utilization
-2. Check database query performance
-3. Review ML model inference times
-4. Scale services if needed
+# Scale service if needed
+docker-compose up -d --scale detector=2
+```
 
-#### Canary Fatigue
-1. Rotate canary token patterns
-2. Update honeypot data structures
-3. Introduce new deception techniques
-4. Monitor attacker adaptation
+#### Level 2: Security Incident
+**Symptoms**:
+- Authentication failures
+- Suspicious request patterns
+- High detection scores
+- Data quarantine triggers
 
-## Escalation Procedures
+**Actions**:
+1. Review security logs
+2. Check threat intelligence feeds
+3. Validate data integrity
+4. Consider service isolation
 
-### Level 1: Operator
-- Handle routine alerts and analysis
-- Document all decisions and actions
-- Escalate complex incidents to Level 2
+```bash
+# Check recent security events
+curl http://localhost:8015/events?severity=high
 
-### Level 2: Security Engineer  
-- Investigate complex attacks
-- Update detection algorithms
-- Coordinate with threat intelligence
+# Review quarantined data
+curl http://localhost:8013/quarantine/list
+```
 
-### Level 3: Management
-- Approve major operational changes
-- Handle compliance and legal issues
-- Coordinate with external partners
+#### Level 3: Critical Infrastructure
+**Symptoms**:
+- Multiple service failures
+- Data corruption suspected
+- Infrastructure compromise
+- Widespread authentication failures
 
-## Contact Information
+**Actions**:
+1. Activate incident response team
+2. Isolate affected systems
+3. Initiate disaster recovery
+4. Preserve forensic evidence
 
-- **Security Operations**: soc@aegis-c.local
-- **Engineering Support**: eng@aegis-c.local  
-- **Management**: leadership@aegis-c.local
-- **Emergency**: emergency@aegis-c.local
+```bash
+# Emergency shutdown
+docker-compose down
 
----
+# Preserve logs for forensics
+docker-compose logs > incident_logs_$(date +%Y%m%d_%H%M%S).log
+```
 
-**Last Updated**: 2024-01-01
-**Version**: 1.0.0
-**Classification**: Internal Use Only
+### Maintenance Procedures
+
+#### Routine Maintenance
+**Daily**:
+- Check service health status
+- Review error logs
+- Monitor resource utilization
+- Verify threat intelligence updates
+
+**Weekly**:
+- Rotate API keys
+- Update threat intelligence feeds
+- Clean up old logs and temporary data
+- Review performance metrics
+
+**Monthly**:
+- Update dependencies
+- Review and update detection rules
+- Backup configuration and data
+- Security audit and penetration testing
+
+#### Service Updates
+```bash
+# Update service without downtime
+docker-compose pull detector
+docker-compose up -d --no-deps detector
+
+# Rolling update for multiple instances
+docker-compose up -d --no-deps --scale detector=2 detector
+docker-compose up -d --no-deps --scale detector=1 detector
+```
+
+#### Database Maintenance
+```bash
+# PostgreSQL maintenance
+docker-compose exec postgres psql -U postgres -c "VACUUM ANALYZE;"
+
+# Redis maintenance
+docker-compose exec redis redis-cli FLUSHDB
+
+# Backup databases
+docker-compose exec postgres pg_dump -U postgres > backup_$(date +%Y%m%d).sql
+```
+
+### Troubleshooting
+
+#### Common Issues
+
+**Service Won't Start**
+```bash
+# Check service logs
+docker-compose logs detector
+
+# Check port conflicts
+netstat -tulpn | grep 8010
+
+# Validate configuration
+docker-compose config
+```
+
+**High Memory Usage**
+```bash
+# Check memory usage
+docker stats
+
+# Restart service to clear memory
+docker-compose restart detector
+
+# Scale up resources
+docker-compose up -d --scale detector=2
+```
+
+**Authentication Failures**
+```bash
+# Verify API key
+curl -H "x-api-key: changeme-dev" http://localhost:8010/secure/ping
+
+# Check environment variables
+docker-compose exec detector env | grep API_KEY
+```
+
+**GPU Issues**
+```bash
+# Check GPU status
+curl http://localhost:8016/status
+
+# Monitor GPU metrics
+watch -n 5 'curl -s http://localhost:8016/metrics | jq .'
+
+# Execute hardware policy
+curl -X POST "http://localhost:8016/policy/execute?action=reset&target_gpu=0"
+```
+
+### Performance Tuning
+
+#### Service Optimization
+- Adjust worker processes based on CPU cores
+- Configure appropriate timeouts and retries
+- Optimize database connection pools
+- Enable caching for frequently accessed data
+
+#### Resource Scaling
+```bash
+# Scale services horizontally
+docker-compose up -d --scale detector=3 --scale fingerprint=2
+
+# Monitor scaling effectiveness
+docker-compose logs -f | grep "worker"
+```
+
+#### Database Optimization
+```bash
+# PostgreSQL tuning
+docker-compose exec postgres psql -U postgres -c "ALTER SYSTEM SET shared_buffers = '256MB';"
+docker-compose restart postgres
+
+# Redis optimization
+docker-compose exec redis redis-cli CONFIG SET maxmemory 512mb
+```
+
+### Security Operations
+
+#### Access Control
+```bash
+# Rotate API keys
+export API_KEY=$(openssl rand -hex 16)
+docker-compose up -d
+
+# Update console password
+export CONSOLE_PWD=$(openssl rand -base64 12)
+docker-compose up -d console
+```
+
+#### Security Monitoring
+```bash
+# Monitor authentication attempts
+docker-compose logs | grep "401\|403"
+
+# Check for suspicious patterns
+curl http://localhost:8010/metrics | grep detection_scores
+
+# Review threat intelligence
+curl http://localhost:8018/analysis/ai-threats
+```
+
+### Backup and Recovery
+
+#### Data Backup
+```bash
+# Backup all data volumes
+docker run --rm -v aegis-c_pg:/data -v $(pwd):/backup ubuntu tar czf /backup/postgres_backup_$(date +%Y%m%d).tar.gz -C /data .
+docker run --rm -v aegis-c_redis:/data -v $(pwd):/backup ubuntu tar czf /backup/redis_backup_$(date +%Y%m%d).tar.gz -C /data .
+```
+
+#### Service Recovery
+```bash
+# Restore from backup
+docker-compose down
+docker run --rm -v aegis-c_pg:/data -v $(pwd):/backup ubuntu tar xzf /backup/postgres_backup_20240115.tar.gz -C /data
+docker-compose up -d
+```
+
+### Escalation Procedures
+
+#### When to Escalate
+- Multiple services down simultaneously
+- Security breach confirmed
+- Data corruption suspected
+- Performance degradation > 50%
+- SLA violations imminent
+
+#### Escalation Contacts
+- **Level 1**: On-call engineer (immediate)
+- **Level 2**: Engineering team lead (15 minutes)
+- **Level 3**: Security team (30 minutes)
+- **Level 4**: Management (1 hour)
+
+#### Escalation Checklist
+- [ ] Document incident start time
+- [ ] Assess impact scope
+- [ ] Notify appropriate stakeholders
+- [ ] Implement containment measures
+- [ ] Preserve forensic evidence
+- [ ] Initiate recovery procedures
+- [ ] Post-incident review
+
+*This runbook will be updated regularly based on operational experience and incident data.*

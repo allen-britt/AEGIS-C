@@ -9,6 +9,7 @@ AEGIS‑C is a lawful counter‑AI platform that detects adversary AI activity, 
 - Human‑on‑the‑loop: operational actions require signed provenance and dual review
 
 ## Architecture at a Glance
+- **🧠 Intelligence Core:** Brain Gateway (8030) with adaptive risk scoring and policy decisions
 - **Ingress & Friction:** gateway (planned), provenance verifier, challenge probes
 - **Analysis:** Detector (8010), Fingerprinting (8011), Cold War Defense analytics (8015)
 - **Intelligence:** Intelligence Service (8018), Vulnerability Database (8019) with real-time threat feeds
@@ -17,7 +18,9 @@ AEGIS‑C is a lawful counter‑AI platform that detects adversary AI activity, 
 - **Operators:** Streamlit console (8501) and offensive toolkit (8502) for red-team validation
 - **Backends:** docker-compose provides Postgres, Redis, Neo4j, MinIO, NATS for production parity
 - **Threat Intelligence:** NVD, Exploit-DB, GitHub Advisory integration with AI-specific vulnerability tracking
+- **Smart Features:** Active learning, causal analysis, probe generation, hardware intent correlation
 - Detailed design: `docs/technical-overview.md` & `docs/threat-model.md`
+- Intelligence guide: `INTELLIGENCE.md`
 
 ## Quick Start (Local)
 ```powershell
@@ -26,6 +29,10 @@ python -m venv venv_windows
 venv_windows\Scripts\pip install -r requirements.txt  # if consolidated file exists
 
 # Start core FastAPI services (each in new terminal or via provided scripts)
+# 🧠 Start Brain Gateway FIRST (required by all other services)
+venv_windows\Scripts\python -m uvicorn services.brain.main:app --port 8030 --host 0.0.0.0
+
+# Then start other services (they connect to brain)
 venv_windows\Scripts\python -m uvicorn services.detector.main:app --port 8010 --host 0.0.0.0
 venv_windows\Scripts\python -m uvicorn services.fingerprint.main:app --port 8011 --host 0.0.0.0
 venv_windows\Scripts\python -m uvicorn services.honeynet.main:app --port 8012 --host 0.0.0.0
@@ -35,11 +42,11 @@ venv_windows\Scripts\python -m uvicorn services.coldwar.main:app --port 8015 --h
 venv_windows\Scripts\python -m uvicorn services.hardware.main:app --port 8016 --host 0.0.0.0
 venv_windows\Scripts\python -m uvicorn services.discovery.main:app --port 8017 --host 0.0.0.0
 
-# Start intelligence services (NEW!)
+# Start intelligence services
 venv_windows\Scripts\python -m uvicorn services.intelligence.main:app --port 8018 --host 0.0.0.0
 venv_windows\Scripts\python -m uvicorn services.vuln_db.main:app --port 8019 --host 0.0.0.0
 
-# Launch operator console
+# Launch operator console (includes brain demo!)
 venv_windows\Scripts\python -m streamlit run services\console\app.py --server.port 8501 --server.address 0.0.0.0
 
 # Optional: launch offensive toolkit
@@ -49,22 +56,50 @@ Scripts `start.bat` / `stop.bat` and `start.sh` / `stop.sh` orchestrate services
 
 ## Verification
 ```powershell
+# 🧠 Test Brain Gateway first
+bash tests/test_brain.sh
+
+# Run intelligence verification
+bash verify-smart.sh
+
 # Run end-to-end service checks
 venv_windows\Scripts\python test_platform.py
 
-# Test intelligence integration (NEW!)
+# Test intelligence integration
 venv_windows\Scripts\python test_intelligence_integration.py
 ```
-Expected output includes `ALL TESTS PASSED` when detector/fingerprint/honeynet/admission/provenance services are healthy.
+Expected output includes `ALL CHECKS PASSED` for intelligence and `ALL TESTS PASSED` for platform health.
 
-## 🧠 Intelligence Integration (NEW!)
-AEGIS‑C now features real-time threat intelligence integration:
+## 🧠 Intelligence Features
+AEGIS‑C is now a truly adaptive intelligence platform:
 
-### **Threat Intelligence Sources**
-- **NVD (National Vulnerability Database)**: Real CVE data with AI-specific filtering
-- **Exploit-DB**: Known exploits and attack techniques
-- **GitHub Security Advisories**: Python package vulnerabilities affecting AI/ML libraries
-- **Custom Threat Feeds**: AI-specific attack patterns and indicators
+### **Core Intelligence**
+- **🧠 Brain Gateway (8030)**: Adaptive risk scoring with explainable features
+- **⚖️ Policy Engine**: Intelligent action selection using multi-armed bandits
+- **📊 Universal Client**: Easy integration for any service (`assess()` + `decide()`)
+- **🎯 Explainable AI**: Every decision includes probability + feature attribution
+
+### **Smart Components**
+- **🔍 Causal Analysis**: Root cause explanation for incidents
+- **🤖 Active Learning**: Human-in-the-loop improvement from corrections
+- **🛡️ RAG Firewall**: Semantic content sanitization
+- **🎭 Adaptive Honeynet**: Personality morphing based on attacker behavior
+- **⚡ Probe Generation**: Automated fingerprinting probe evolution
+- **🖥️ Hardware Intent**: Correlates anomalies with model impact
+
+### **Interactive Demo**
+```bash
+# Launch brain intelligence demo
+streamlit run services/console/brain_demo.py
+```
+
+**Quick Test**: Try signal `canary_echo=1.0,rag_injection=0.7` → see risk probability and policy recommendation!
+
+### **Documentation**
+- 📖 **Intelligence Guide**: `INTELLIGENCE.md`
+- 🏗️ **Technical Overview**: `docs/technical-overview.md`
+- 🛡️ **Threat Model**: `docs/threat-model.md`
+- 🔧 **API Contracts**: `docs/api-contracts.md`
 
 ### **Enhanced Detection Capabilities**
 - **Vulnerability Correlation**: Cross-reference detected content with known CVEs

@@ -1,14 +1,31 @@
-from fastapi import FastAPI, Request, HTTPException
+"""
+AEGIS‑C Detector Service (Simple)
+==================================
+
+AI-generated text and agent detection with standardized guard.
+"""
+
+import os
+from fastapi import FastAPI, Request, Depends
 from pydantic import BaseModel
 import time
-import logging
+import sys
 
-# Configure basic logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Add shared module to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+from service_guard import setup_service_guard, record_detection_score, logger, require_api_key
 
+# Service Configuration
+SERVICE_NAME = "detector"
+SERVICE_PORT = int(os.getenv("DETECTOR_PORT", "8010"))
+
+# Initialize FastAPI App
 app = FastAPI(title="AEGIS‑C Detector Service")
 
+# Setup standardized guard
+setup_service_guard(app, SERVICE_NAME)
+
+# Models
 class TextPayload(BaseModel):
     text: str
 
@@ -28,8 +45,8 @@ class AgentResult(BaseModel):
     verdict: str
     signals: dict
 
-# --- Basic Detection Logic ---
-def detect_ai_text(text: str) -> tuple[float, str, dict]:
+# Detection Logic
+def detect_ai_text(text: str) -> DetectionResult:
     """Simple AI text detection heuristics"""
     signals = {}
     
@@ -61,9 +78,12 @@ def detect_ai_text(text: str) -> tuple[float, str, dict]:
     else:
         verdict = "likely_human"
     
-    return score, verdict, signals
+    # Record metrics
+    record_detection_score(score, verdict)
+    
+    return DetectionResult(score=round(score, 3), verdict=verdict, signals=signals)
 
-def detect_ai_agent(request: Request, payload: AgentPayload) -> tuple[float, str, dict]:
+def detect_ai_agent(request: Request, payload: AgentPayload) -> AgentResult:
     """Simple AI agent detection"""
     ua = payload.user_agent
     cookie = payload.cookie
@@ -94,49 +114,15 @@ def detect_ai_agent(request: Request, payload: AgentPayload) -> tuple[float, str
     else:
         verdict = "likely_human"
     
-    return score, verdict, signals
+    # Record metrics
+    record_detection_score(score, verdict)
+    
+    return AgentResult(score=round(score, 3), verdict=verdict, signals=signals)
 
-# --- API Endpoints ---
-@app.post("/detect/text")
-async def detect_text(payload: TextPayload):
-    """Detect AI-generated text"""
-    try:
-        score, verdict, signals = detect_ai_text(payload.text)
-        logger.info(f"Text detection: score={score}, verdict={verdict}")
-        return DetectionResult(score=round(score, 3), verdict=verdict, signals=signals)
-    except Exception as e:
-        logger.error(f"Text detection error: {e}")
-        raise HTTPException(status_code=500, detail="Detection failed")
-
-@app.post("/detect/agent")
-async def detect_agent(request: Request, payload: AgentPayload):
-    """Detect AI/bot agents"""
-    try:
-        score, verdict, signals = detect_ai_agent(request, payload)
-        logger.info(f"Agent detection: score={score}, verdict={verdict}")
-        return AgentResult(score=round(score, 3), verdict=verdict, signals=signals)
-    except Exception as e:
-        logger.error(f"Agent detection error: {e}")
-        raise HTTPException(status_code=500, detail="Detection failed")
-
-# --- Health and Info Endpoints ---
-@app.get("/health")
-async def health():
-    """Basic health check"""
-    return {"ok": True, "service": "detector", "version": "1.0.0"}
-
-@app.get("/metrics")
-async def metrics():
-    """Simple metrics endpoint"""
-    return {
-        "http_requests_total": 0,
-        "service_health": 1,
-        "uptime_seconds": time.time()
-    }
-
-@app.get("/info")
-async def info():
-    """Service information"""
+# API Endpoints
+@app.get("/")
+async def root():
+    """Root endpoint"""
     return {
         "service": "AEGIS‑C Detector",
         "version": "1.0.0",
@@ -150,11 +136,44 @@ async def info():
         }
     }
 
-@app.get("/")
-async def root():
-    """Root endpoint"""
-    return await info()
+@app.post("/detect/text")
+async def detect_text(payload: TextPayload):
+    """Detect AI-generated text"""
+    try:
+        result = detect_ai_text(payload.text)
+        logger.info(f"Text detection: score={result.score}, verdict={result.verdict}")
+        return result
+    except Exception as e:
+        logger.error(f"Text detection error: {e}")
+        raise
+
+@app.post("/detect/agent")
+async def detect_agent(request: Request, payload: AgentPayload):
+    """Detect AI/bot agents"""
+    try:
+        result = detect_ai_agent(request, payload)
+        logger.info(f"Agent detection: score={result.score}, verdict={result.verdict}")
+        return result
+    except Exception as e:
+        logger.error(f"Agent detection error: {e}")
+        raise
+
+@app.get("/info")
+async def info():
+    """Service information"""
+    return await root()
+
+# Protected endpoints
+@app.post("/secure/detect/text", dependencies=[Depends(require_api_key)])
+async def secure_detect_text(payload: TextPayload):
+    """Protected text detection"""
+    return await detect_text(payload)
+
+@app.post("/secure/detect/agent", dependencies=[Depends(require_api_key)])
+async def secure_detect_agent(request: Request, payload: AgentPayload):
+    """Protected agent detection"""
+    return await detect_agent(request, payload)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8010)
+    uvicorn.run(app, host="0.0.0.0", port=SERVICE_PORT)

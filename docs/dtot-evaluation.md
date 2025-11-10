@@ -1,81 +1,298 @@
-# AEGIS‑C Developmental & Operational Test (DT/OT) Plan
+# AEGIS‑C DTOT Evaluation Plan
 
-## 1. Purpose
-This document defines developmental testing (DT) and operational testing (OT) for AEGIS‑C. It specifies scenarios, evaluation criteria, pass/fail metrics, required tooling, and documentation outputs to certify readiness for production deployment under the mission Rules of Engagement.
+## Development Test and Operational Test (DTOT)
 
-## 2. Test Environments
-| Environment | Description | Objectives |
-|-------------|-------------|------------|
-| DEV | Local developer machines or CI runners | Unit/integration tests per service |
-| DT | Controlled staging environment mirroring production data flows (synthetic only) | Validate end-to-end workflows, tune thresholds |
-| OT | Operator-run exercise using mission-realistic traffic, red-team campaigns, hardware telemetry | Demonstrate readiness, confirm SOPs, evaluate human-in-the-loop controls |
+### Overview
 
-## 3. Test Roles
-- **Test Director (TD):** Approves plans, ensures compliance with ROE.
-- **Data Owner:** Provides sanitized datasets and verifies provenance.
-- **Operators:** Execute console workflows, sign findings.
-- **Red Team:** Runs Cold War offensive toolkit in OT.
-- **Hardware Lead:** Operates hardware sentinel scenarios.
+This document outlines the comprehensive test plan for validating AEGIS‑C functionality, performance, and operational readiness across development and operational phases.
 
-## 4. Developmental Testing (DT)
-### 4.1 Service-Level Tests
-| Service | Test | Procedure | Pass Criteria |
-|---------|------|-----------|---------------|
-| Detector | API health | `curl http://localhost:8010/health` | `ok=true` |
-| Detector | Text AI detection | Post sample AI text; expect `verdict=likely_ai` threshold ≥ 0.6 | ≥ 0.6 score |
-| Detector | Human baseline | Post human text; expect `verdict=likely_human` | ≤ 0.4 score |
-| Fingerprint | Probe retrieval | GET `/probes`; ensure non-empty list | Status 200 + ≥ 4 probes |
-| Fingerprint | Vector scoring | Submit exact matches; expect similarity ≥ 0.8 | Similarity ≥ 0.8, guess correct |
-| Admission | Poison sample | Post `INJECT_TRIGGER` payload; expect `verdict=quarantine` | Score > 1.0 |
-| Honeynet | Telemetry | GET dataset; ensure `CNRY-` tokens present in response | Response contains canary |
-| Provenance | Sign/Verify | Upload sample file; verify computed hash equals signature | `verified=true` |
-| Cold War Defense | Health & analytics | `curl http://localhost:8015/health`; run mock request | `ok=true`; endpoints return 200 |
-| Hardware Sentinel | Scan | POST `/hardware/scan`; inventory includes CPU + GPU entries | ≥ 1 component, trust level reported |
+## Test Phases
 
-### 4.2 Integration Tests
-1. **`python test_platform.py`** – ensures detector, fingerprint, honeynet, admission, provenance respond correctly. **Pass:** script exits 0 and prints `ALL TESTS PASSED`.
-2. **Cold War Campaign Dry Run:** Use offensive toolkit with stealth mode; confirm coldwar service records `defenses_breached_count` and console shows alert. **Pass:** Attack results available with ≥1 metric populated.
-3. **Hardware Attack Simulation:** POST `/hardware/attack` targeting GPU memory exhaustion intensity 0.7. **Pass:** Response includes `success=true`, triggered defenses list, and recommendations.
+### Phase 1: Development Testing (DT)
 
-### 4.3 Performance Benchmarks
-- Detector response time ≤ 200 ms for text payloads (95th percentile).
-- Admission control batch (100 samples) completes in ≤ 5 s.
-- Hardware scan completes in ≤ 10 s on single GPU system.
+#### Unit Testing
+**Scope**: Individual service components and functions
+**Coverage Target**: 90% code coverage
 
-## 5. Operational Testing (OT)
-### 5.1 Scenario Matrix
-| Scenario | Description | Primary Metrics | Pass Criteria |
-|----------|-------------|-----------------|---------------|
-| OT‑1 Detection | Synthetic adversary campaign hitting gateway, detector, admission | Detection precision, alert latency | ≥0.85 precision, alerts <30s latency |
-| OT‑2 Honeynet Engagement | Red team uses offensive toolkit high-intensity mode | Session depth, canary triggers | ≥3 requests/session, ≥1 canary triggered |
-| OT‑3 Data Pipeline Defense | Inject mix of clean/poison samples into admission queue | Quarantine rate | ≥90% of poisons quarantined, ≤5% false positives |
-| OT‑4 Provenance Enforcement | Signed vs tampered assets ingested | Verification accuracy | 100% of signed pass, 100% tampered fail |
-| OT‑5 Hardware Resilience | Induce simulated GPU thermal attack + ECC spike | Risk score reaction, policy activation | Risk ≥0.7 within 60s, adaptive defense triggered |
-| OT‑6 Console Operations | Operators triage cases, approve actions | SOP compliance, audit trail completeness | All actions logged with dual review, 0 unauthorized actions |
+**Test Categories**:
+- Detection algorithms accuracy
+- API endpoint functionality
+- Database operations
+- Authentication and authorization
+- Error handling and edge cases
 
-### 5.2 Evaluation Procedures
-1. **Pre-Test Checklist:** Ensure ROE compliance, sanitize datasets, verify logging.
-2. **Execution:** Run each scenario sequentially; TD records metrics using console exports and service logs.
-3. **Post-Test Review:** Compare metrics to pass criteria; collect operator feedback; file deviation reports.
+**Test Framework**: pytest with async support
+```bash
+# Run unit tests
+pytest tests/unit/ -v --cov=services --cov-report=html
 
-## 6. Tooling & Data Requirements
-- `scripts/load_test.py` (planned) for load generation.
-- Offensive toolkit at `offensive/simple_dashboard.py` for red-team scenarios.
-- Synthetic corpora for admission control (clean + poison sets).
-- Hardware telemetry baseline (export from `/hardware/scan`).
+# Run specific service tests
+pytest tests/unit/test_detector.py -v
+```
 
-## 7. Documentation Outputs
-- DT Test Report: results matrix, issues, remediation plan.
-- OT Test Report: scenario outcomes, operator feedback, readiness recommendation.
-- Configuration baselines: service versions, thresholds, hardware inventory.
-- Updated runbook with lessons learned.
+**Success Criteria**:
+- All tests pass
+- Code coverage ≥ 90%
+- No critical security vulnerabilities
+- Performance benchmarks met
 
-## 8. Exit Criteria
-AEGIS‑C moves to production only when:
-- All DT and OT pass criteria met.
-- No high-severity open issues; medium issues have mitigation plan.
-- ROE compliance attestation signed by TD and mission owner.
-- Hardware sentinel policies validated and active.
+#### Integration Testing
+**Scope**: Service-to-service communication and data flow
+**Environment**: Docker Compose test environment
 
-## 9. Change Management
-Any future capability changes require revision of this DT/OT plan, regression testing using `test_platform.py`, and re-certification of affected components.
+**Test Scenarios**:
+- End-to-end detection workflow
+- Intelligence service integration
+- Hardware monitoring pipeline
+- Console service aggregation
+- Purple team coordination
+
+**Test Data**:
+- Known AI-generated content samples
+- Prompt injection attack vectors
+- Data poisoning examples
+- Hardware anomaly simulations
+- Threat intelligence test feeds
+
+#### Security Testing
+**Scope**: Authentication, authorization, and input validation
+**Tools**: OWASP ZAP, custom security test suites
+
+**Test Areas**:
+- API key validation
+- Input sanitization
+- SQL injection prevention
+- XSS protection
+- Rate limiting effectiveness
+
+### Phase 2: Operational Testing (OT)
+
+#### Functional Testing
+**Scope**: Complete system functionality in production-like environment
+
+**Test Matrix**:
+
+| Function | Test Case | Expected Result | Priority |
+|----------|-----------|-----------------|----------|
+| AI Text Detection | Submit known AI text | Score > 0.7, verdict "likely_ai" | Critical |
+| Agent Detection | Bot traffic simulation | Score > 0.6, verdict "likely_bot" | Critical |
+| Data Poisoning Guard | Submit poisoned data | Quarantine triggered | High |
+| Hardware Monitoring | GPU stress test | Anomaly detection | High |
+| Threat Intelligence | CVE feed processing | Vulnerabilities loaded | Medium |
+| Console Dashboard | Service aggregation | All services status shown | Medium |
+
+#### Performance Testing
+**Scope**: System performance under load
+
+**Performance Targets**:
+- Response time < 500ms (95th percentile)
+- Throughput > 100 requests/second per service
+- Memory usage < 2GB per service
+- CPU utilization < 80% under normal load
+
+**Load Testing Scenarios**:
+```bash
+# Concurrent user simulation
+k6 run --vus 100 --duration 5m tests/load/detection_test.js
+
+# Stress testing
+k6 run --vus 500 --duration 10m tests/load/stress_test.js
+```
+
+#### Availability Testing
+**Scope**: System resilience and failover capabilities
+
+**Test Scenarios**:
+- Service restart resilience
+- Database connection failure recovery
+- Network partition handling
+- Resource exhaustion behavior
+- Graceful degradation
+
+**Availability Targets**:
+- 99.9% uptime for core services
+- < 5 minute recovery time for failures
+- No single point of failure
+- Automatic health monitoring
+
+### Phase 3: Security Evaluation
+
+#### Penetration Testing
+**Scope**: External security assessment by red team
+
+**Attack Vectors**:
+- API endpoint exploitation
+- Authentication bypass attempts
+- Data exfiltration techniques
+- Privilege escalation attacks
+- Supply chain vulnerabilities
+
+**Tools and Techniques**:
+- Burp Suite for API testing
+- Metasploit for exploitation
+- Custom AI attack frameworks
+- Threat emulation scenarios
+
+#### Threat Intelligence Validation
+**Scope**: Effectiveness of threat intelligence integration
+
+**Validation Metrics**:
+- False positive rate < 5%
+- False negative rate < 10%
+- Threat feed update latency < 1 hour
+- Vulnerability correlation accuracy > 90%
+
+#### Compliance Testing
+**Scope**: Regulatory and standards compliance
+
+**Compliance Frameworks**:
+- NIST Cybersecurity Framework
+- ISO 27001 controls
+- SOC 2 Type II criteria
+- Industry-specific requirements
+
+### Phase 4: Operational Readiness
+
+#### Disaster Recovery Testing
+**Scope**: Business continuity and disaster recovery procedures
+
+**Test Scenarios**:
+- Complete system outage recovery
+- Data restoration from backups
+- Alternative site activation
+- Communication protocol validation
+- Recovery time objective (RTO) verification
+
+#### Training and Documentation
+**Scope**: Operator training and documentation validation
+
+**Training Areas**:
+- System operation procedures
+- Incident response protocols
+- Security monitoring techniques
+- Performance tuning methods
+
+**Documentation Validation**:
+- Runbook accuracy verification
+- API documentation completeness
+- Troubleshooting guide effectiveness
+- Configuration management procedures
+
+## Test Environment
+
+### Development Environment
+- Local Docker Compose deployment
+- Mock data and services
+- Development database instances
+- Simulated threat intelligence feeds
+
+### Staging Environment
+- Production-like infrastructure
+- Real threat intelligence feeds
+- Full service deployment
+- Performance monitoring tools
+
+### Production Environment
+- Live deployment with monitoring
+- Real-time threat data
+- Full observability stack
+- Automated testing pipeline
+
+## Test Metrics and KPIs
+
+### Functional Metrics
+- **Detection Accuracy**: True positive / (true positive + false negative)
+- **False Positive Rate**: False positive / (false positive + true negative)
+- **Coverage**: Percentage of test scenarios executed
+- **Pass Rate**: Percentage of tests passing
+
+### Performance Metrics
+- **Response Time**: 95th percentile response time
+- **Throughput**: Requests per second
+- **Resource Utilization**: CPU, memory, GPU usage
+- **Availability**: Uptime percentage
+
+### Security Metrics
+- **Vulnerability Count**: Number of security findings
+- **Time to Remediate**: Average time to fix vulnerabilities
+- **Security Score**: Overall security assessment rating
+- **Compliance Score**: Regulatory compliance percentage
+
+## Test Schedule
+
+### Development Phase (Weeks 1-4)
+- Week 1: Unit test development and execution
+- Week 2: Integration test implementation
+- Week 3: Security testing and vulnerability assessment
+- Week 4: Performance baseline establishment
+
+### Operational Phase (Weeks 5-8)
+- Week 5: Functional testing in staging environment
+- Week 6: Performance and load testing
+- Week 7: Security evaluation and penetration testing
+- Week 8: Operational readiness assessment
+
+### Production Phase (Weeks 9-12)
+- Week 9: Production deployment validation
+- Week 10: Disaster recovery testing
+- Week 11: Training and documentation validation
+- Week 12: Final assessment and certification
+
+## Acceptance Criteria
+
+### Go/No-Go Decision Points
+
+#### Development Complete
+- [ ] All unit tests passing with ≥ 90% coverage
+- [ ] Integration tests validating all service interactions
+- [ ] Security assessment with no critical vulnerabilities
+- [ ] Performance benchmarks met
+
+#### Operational Ready
+- [ ] Functional tests passing in staging environment
+- [ ] Performance targets achieved under load
+- [ ] Security evaluation completed
+- [ ] Documentation and training completed
+
+#### Production Deployment
+- [ ] Production environment validated
+- [ ] Disaster recovery procedures tested
+- [ ] Monitoring and alerting operational
+- [ ] Stakeholder approval obtained
+
+## Risk Mitigation
+
+### Test Risks
+- **Incomplete Coverage**: Mitigate with comprehensive test planning
+- **Environment Differences**: Use production-like staging environment
+- **Test Data Quality**: Use realistic and diverse test datasets
+- **Resource Constraints**: Prioritize critical test scenarios
+
+### Operational Risks
+- **Service Downtime**: Implement rolling deployment strategies
+- **Data Loss**: Comprehensive backup and recovery procedures
+- **Security Breaches**: Continuous security monitoring and assessment
+- **Performance Degradation**: Real-time performance monitoring and alerting
+
+## Continuous Improvement
+
+### Test Process Enhancement
+- Regular test case reviews and updates
+- Automated test execution in CI/CD pipeline
+- Performance regression testing
+- Security testing automation
+
+### Operational Excellence
+- Incident post-mortems and lessons learned
+- Procedure optimization based on operational experience
+- Technology stack updates and migrations
+- Scalability and capacity planning
+
+---
+
+**Document Version**: 1.0  
+**Last Updated**: 2024-01-15  
+**Next Review**: 2024-02-15  
+**Approved By**: AEGIS‑C Test Team  
+
+*This evaluation plan will be continuously updated based on test results, operational experience, and evolving requirements.*
