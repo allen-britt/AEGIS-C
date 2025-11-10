@@ -1,69 +1,283 @@
 version: "3.9"
+
 services:
+  # Infrastructure Services
   postgres:
     image: postgres:15
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: aegis_c
-    ports: ["5432:5432"]
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pg:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
 
   redis:
     image: redis:7
-    ports: ["6379:6379"]
+    command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - redis:/data
+    ports:
+      - "6379:6379"
 
   neo4j:
     image: neo4j:5
     environment:
-      NEO4J_AUTH: neo4j/password
-      NEO4J_dbms_memory_heap_initial__size: 512m
-      NEO4J_dbms_memory_heap_max__size: 1G
-    ports: ["7474:7474", "7687:7687"]
-    volumes:
-      - neo4j_data:/data
+      NEO4J_AUTH: "neo4j/password"
+      NEO4J_PLUGINS: '["apoc"]'
     healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "password", "RETURN 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p password 'RETURN 1;'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - neo4j:/data
 
   minio:
-    image: minio/minio
+    image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: minio123
-    ports: ["9000:9000", "9001:9001"]
-    volumes:
-      - minio_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio:/data
 
   nats:
     image: nats:2
-    ports: ["4222:4222", "8222:8222"]
-    command: ["--http_port", "8222"]
+    command: ["--store_dir", "/data", "--jetstream"]
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8222/varz"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD", "nats", "--version"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    volumes:
+      - nats:/data
+
+  # AEGIS‑C Security Services
+  detector:
+    build: ./services/detector
+    environment:
+      - API_KEY=${API_KEY}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SERVICE_NAME=detector
+    ports:
+      - "8010:8010"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8010/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  fingerprint:
+    build: ./services/fingerprint
+    environment:
+      - API_KEY=${API_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - SERVICE_NAME=fingerprint
+    ports:
+      - "8011:8011"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  honeynet:
+    build: ./services/honeynet
+    environment:
+      - API_KEY=${API_KEY}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - SERVICE_NAME=honeynet
+    ports:
+      - "8012:8012"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8012/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  admission:
+    build: ./services/admission
+    environment:
+      - API_KEY=${API_KEY}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - REDIS_URL=${REDIS_URL}
+      - SERVICE_NAME=admission
+    ports:
+      - "8013:8013"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8013/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  provenance:
+    build: ./services/provenance
+    environment:
+      - API_KEY=${API_KEY}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - SERVICE_NAME=provenance
+    ports:
+      - "8014:8014"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8014/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  coldwar:
+    build: ./services/coldwar
+    environment:
+      - API_KEY=${API_KEY}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - NEO4J_URL=${NEO4J_URL}
+      - NEO4J_USER=${NEO4J_USER}
+      - NEO4J_PASS=${NEO4J_PASS}
+      - SERVICE_NAME=coldwar
+    ports:
+      - "8015:8015"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8015/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  hardware:
+    build: ./services/hardware
+    environment:
+      - API_KEY=${API_KEY}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - SERVICE_NAME=hardware
+    ports:
+      - "8016:8016"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8016/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # Purple Team Services
+  discovery:
+    build: ./services/discovery
+    environment:
+      - API_KEY=${API_KEY}
+      - REDIS_URL=${REDIS_URL}
+      - SERVICE_NAME=discovery
+    ports:
+      - "8017:8017"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8017/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  # Console (Streamlit)
+  console:
+    build: ./services/console
+    environment:
+      - API_KEY=${API_KEY}
+      - CONSOLE_PWD=${CONSOLE_PWD}
+      - PORT=${CONSOLE_PORT}
+      - DETECTOR_URL=http://detector:8010
+      - FINGERPRINT_URL=http://fingerprint:8011
+      - HONEYNET_URL=http://honeynet:8012
+      - ADMISSION_URL=http://admission:8013
+      - PROVENANCE_URL=http://provenance:8014
+      - COLDWAR_URL=http://coldwar:8015
+      - HARDWARE_URL=http://hardware:8016
+      - DISCOVERY_URL=http://discovery:8017
+    ports:
+      - "${CONSOLE_PORT}:${CONSOLE_PORT}"
+    depends_on:
+      detector:
+        condition: service_healthy
+      fingerprint:
+        condition: service_healthy
+      honeynet:
+        condition: service_healthy
+      admission:
+        condition: service_healthy
+      provenance:
+        condition: service_healthy
+      coldwar:
+        condition: service_healthy
+      hardware:
+        condition: service_healthy
+      discovery:
+        condition: service_healthy
 
 volumes:
-  postgres_data:
-  neo4j_data:
-  minio_data:
+  pg:
+    driver: local
+  redis:
+    driver: local
+  neo4j:
+    driver: local
+  minio:
+    driver: local
+  nats:
+    driver: local
+
+networks:
+  default:
+    name: aegis-c-network

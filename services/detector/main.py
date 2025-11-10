@@ -1,13 +1,31 @@
-from fastapi import FastAPI, Request
+import os
+import sys
+from fastapi import FastAPI, Request, Depends, HTTPException
 from pydantic import BaseModel
 import time, math
-import logging
+import structlog
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Import shared health metrics
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+from health_metrics import setup_health_metrics, MetricsMiddleware, protected_endpoint
 
-app = FastAPI(title="AEGIS‑C Detector")
+# Setup structured logging
+structlog.configure(
+    processors=[
+        structlog.stdlib.filter_by_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.JSONRenderer()
+    ]
+)
+logger = structlog.get_logger()
+
+app = FastAPI(title="AEGIS‑C Detector Service")
+
+# Setup health metrics and middleware
+setup_health_metrics(app)
+app.add_middleware(MetricsMiddleware)
 
 class TextPayload(BaseModel):
     text: str
@@ -173,6 +191,19 @@ async def detect_agent(request: Request):
     
     return AgentResult(score=round(score, 3), verdict=verdict, signals=signals)
 
+# Protected endpoints
+@app.get("/secure/ping", dependencies=[Depends(protected_endpoint())])
+async def secure_ping():
+    """Protected ping endpoint for authentication testing."""
+    return {"pong": True, "service": "detector"}
+
+@app.get("/secure/detect", dependencies=[Depends(protected_endpoint())])
+async def secure_detection():
+    """Protected detection endpoint."""
+    return {"status": "protected", "service": "detector"}
+
+# Health endpoints are now handled by setup_health_metrics()
+# But we'll keep the basic one for compatibility
 @app.get("/health")
 async def health():
     """Health check endpoint."""
@@ -187,6 +218,8 @@ async def root():
         "endpoints": {
             "detect_text": "/detect/text",
             "detect_agent": "/detect/agent",
-            "health": "/health"
+            "health": "/health",
+            "secure/ping": "/secure/ping (protected)",
+            "metrics": "/metrics"
         }
     }

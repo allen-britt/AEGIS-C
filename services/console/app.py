@@ -1,9 +1,23 @@
+import os
 import streamlit as st
 import requests
 import json
 import time
 from typing import Dict, List, Any
 import pandas as pd
+
+# Console authentication
+CONSOLE_PWD = os.getenv("CONSOLE_PWD", "change-me")
+if "authenticated" not in st.session_state:
+    st.title("🔒 AEGIS‑C Console Authentication")
+    password = st.text_input("Enter console password:", type="password")
+    if password == CONSOLE_PWD:
+        st.session_state.authenticated = True
+        st.success("Authenticated successfully!")
+        st.rerun()
+    else:
+        st.warning("Please enter the correct password to continue.")
+        st.stop()
 
 # Configure page
 st.set_page_config(
