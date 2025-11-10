@@ -1,0 +1,85 @@
+{
+  "target_host": "192.168.1.209",
+  "scan_timestamp": "2025-11-10T16:18:40.392394+00:00",
+  "summary": {
+    "total_open_ports": 0,
+    "open_ports": [],
+    "total_ai_indicators": 0,
+    "total_vulnerabilities": 0
+  },
+  "detailed_findings": [
+    {
+      "target_host": "192.168.1.209",
+      "scan_timestamp": "2025-11-10T16:18:40.392394+00:00",
+      "open_ports": [],
+      "services": {},
+      "ai_indicators": [],
+      "vulnerabilities": []
+    },
+    {
+      "target_host": "192.168.1.209",
+      "scan_timestamp": "2025-11-10T16:19:03.508721+00:00",
+      "open_ports": [],
+      "services": {},
+      "ai_indicators": [],
+      "vulnerabilities": []
+    },
+    {
+      "target_host": "192.168.1.209",
+      "scan_timestamp": "2025-11-10T16:19:26.832666+00:00",
+      "open_ports": [],
+      "services": {},
+      "ai_indicators": [],
+      "vulnerabilities": []
+    },
+    {
+      "target_host": "192.168.1.209",
+      "scan_timestamp": "2025-11-10T16:19:50.709282+00:00",
+      "open_ports": [],
+      "services": {},
+      "ai_indicators": [],
+      "vulnerabilities": []
+    },
+    {
+      "target_host": "192.168.1.209",
+      "scan_timestamp": "2025-11-10T16:20:13.321902+00:00",
+      "open_ports": [],
+      "services": {},
+      "ai_indicators": [],
+      "vulnerabilities": []
+    },
+    {
+      "target_host": "192.168.1.209",
+      "scan_timestamp": "2025-11-10T16:20:35.931023+00:00",
+      "open_ports": [],
+      "services": {},
+      "ai_indicators": [],
+      "vulnerabilities": []
+    },
+    {
+      "target_host": "192.168.1.209",
+      "scan_timestamp": "2025-11-10T16:20:42.121085+00:00",
+      "open_ports": [],
+      "services": {},
+      "ai_indicators": [],
+      "vulnerabilities": []
+    },
+    {
+      "target_host": "192.168.1.209",
+      "scan_timestamp": "2025-11-10T16:21:05.133785+00:00",
+      "open_ports": [],
+      "services": {},
+      "ai_indicators": [],
+      "vulnerabilities": []
+    }
+  ],
+  "defensive_integration": {
+    "new_detection_rules": [],
+    "honeynet_targets": [],
+    "admission_control_protocols": [
+      "ssh"
+    ],
+    "cold_war_indicators": []
+  },
+  "exported_at": null
+}

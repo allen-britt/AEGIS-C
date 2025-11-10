@@ -1,0 +1,13 @@
+{
+  "total_vulnerabilities": 0,
+  "severity_breakdown": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "LOW": 0
+  },
+  "vulnerability_types": [],
+  "findings": [],
+  "defensive_recommendations": [],
+  "exported_at": "2025-11-10T16:18:25.479524+00:00"
+}
