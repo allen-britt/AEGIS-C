@@ -215,6 +215,9 @@ def protected_endpoint():
     """Decorator for protected endpoints"""
     return Depends(require_api_key)
 
+# Direct callable for dependencies
+protected_dependency = Depends(require_api_key)
+
 # Utility functions for service health
 def set_service_healthy():
     """Mark service as healthy"""

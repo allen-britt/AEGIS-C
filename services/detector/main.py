@@ -7,7 +7,7 @@ import structlog
 
 # Import shared health metrics
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
-from health_metrics import setup_health_metrics, MetricsMiddleware, protected_endpoint
+from health_metrics import setup_health_metrics, MetricsMiddleware, protected_dependency
 
 # Setup structured logging
 structlog.configure(
@@ -192,12 +192,12 @@ async def detect_agent(request: Request):
     return AgentResult(score=round(score, 3), verdict=verdict, signals=signals)
 
 # Protected endpoints
-@app.get("/secure/ping", dependencies=[Depends(protected_endpoint())])
+@app.get("/secure/ping", dependencies=[protected_dependency])
 async def secure_ping():
     """Protected ping endpoint for authentication testing."""
     return {"pong": True, "service": "detector"}
 
-@app.get("/secure/detect", dependencies=[Depends(protected_endpoint())])
+@app.get("/secure/detect", dependencies=[protected_dependency])
 async def secure_detection():
     """Protected detection endpoint."""
     return {"status": "protected", "service": "detector"}

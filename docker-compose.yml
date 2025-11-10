@@ -217,19 +217,66 @@ services:
   discovery:
     build: ./services/discovery
     environment:
-      - API_KEY=${API_KEY}
-      - REDIS_URL=${REDIS_URL}
       - SERVICE_NAME=discovery
+      - API_KEY=${API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - METRICS_ENABLED=${METRICS_ENABLED}
     ports:
       - "8017:8017"
-    depends_on:
-      redis:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8017/health"]
       interval: 10s
-      timeout: 3s
-      retries: 10
+      timeout: 5s
+      retries: 20
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis-c-network
+
+  intelligence:
+    build: ./services/intelligence
+    environment:
+      - SERVICE_NAME=intelligence
+      - API_KEY=${API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - METRICS_ENABLED=${METRICS_ENABLED}
+      - REDIS_URL=${REDIS_URL}
+      - INTEL_UPDATE_INTERVAL=${INTEL_UPDATE_INTERVAL}
+    ports:
+      - "8018:8018"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8018/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis-c-network
+
+  vuln_db:
+    build: ./services/vuln_db
+    environment:
+      - SERVICE_NAME=vuln_db
+      - API_KEY=${API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - METRICS_ENABLED=${METRICS_ENABLED}
+      - REDIS_URL=${REDIS_URL}
+      - VULN_UPDATE_INTERVAL=${VULN_UPDATE_INTERVAL}
+    ports:
+      - "8019:8019"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8019/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis-c-network
 
   # Console (Streamlit)
   console:
