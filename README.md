@@ -22,37 +22,60 @@ AEGIS‑C is a lawful counter‑AI platform that detects adversary AI activity, 
 - Detailed design: `docs/technical-overview.md` & `docs/threat-model.md`
 - Intelligence guide: `INTELLIGENCE.md`
 
-## Quick Start (Local)
-```powershell
-# From repo root (Windows)
-python -m venv venv_windows
-venv_windows\Scripts\pip install -r requirements.txt  # if consolidated file exists
+## Quick Start (Local - SIMPLIFIED)
 
-# Start core FastAPI services (each in new terminal or via provided scripts)
+### 🚀 One-Click Launch (Recommended)
+
+**Windows:**
+```powershell
+# Double-click or run:
+start-unified.bat
+```
+
+**Linux/Mac:**
+```bash
+# Make executable and run:
+chmod +x start-unified.sh
+./start-unified.sh
+```
+
+**Python (Cross-platform):**
+```bash
+python launch.py
+```
+
+🎯 **Result**: Single unified web interface at `http://localhost:8500` with ALL functionality!
+
+### 📋 What the Unified Launcher Does
+- ✅ Starts all 11 microservices automatically
+- ✅ Launches infrastructure (PostgreSQL, Redis, Neo4j)
+- ✅ Opens unified web interface with all tools
+- ✅ Monitors service health in real-time
+- ✅ Provides graceful shutdown on Ctrl+C
+
+### 🌐 Unified Interface Features
+- 🧠 **Intelligence Center**: Risk assessment, policy decisions, signal analysis
+- 🔍 **Detection & Analysis**: AI content detection, pattern analysis
+- 💻 **Hardware Monitoring**: GPU metrics, ECC errors, temperature alerts
+- 🎭 **Deception & Honeynet**: Personality selection, decoy management
+- 🔎 **Purple Team**: Offensive testing, evasion analysis
+- 📈 **Analytics**: System metrics, detection trends, performance charts
+
+### 🔧 Manual Start (Advanced)
+
+If you prefer manual control:
+```powershell
 # 🧠 Start Brain Gateway FIRST (required by all other services)
-venv_windows\Scripts\python -m uvicorn services.brain.main:app --port 8030 --host 0.0.0.0
+python -m uvicorn services.brain.main:app --port 8030 --host 0.0.0.0
 
 # Then start other services (they connect to brain)
-venv_windows\Scripts\python -m uvicorn services.detector.main:app --port 8010 --host 0.0.0.0
-venv_windows\Scripts\python -m uvicorn services.fingerprint.main:app --port 8011 --host 0.0.0.0
-venv_windows\Scripts\python -m uvicorn services.honeynet.main:app --port 8012 --host 0.0.0.0
-venv_windows\Scripts\python -m uvicorn services.admission.main:app --port 8013 --host 0.0.0.0
-venv_windows\Scripts\python -m uvicorn services.provenance.main:app --port 8014 --host 0.0.0.0
-venv_windows\Scripts\python -m uvicorn services.coldwar.main:app --port 8015 --host 0.0.0.0
-venv_windows\Scripts\python -m uvicorn services.hardware.main:app --port 8016 --host 0.0.0.0
-venv_windows\Scripts\python -m uvicorn services.discovery.main:app --port 8017 --host 0.0.0.0
+python -m uvicorn services.detector.main:app --port 8010 --host 0.0.0.0
+python -m uvicorn services.fingerprint.main:app --port 8011 --host 0.0.0.0
+# ... etc for all services
 
-# Start intelligence services
-venv_windows\Scripts\python -m uvicorn services.intelligence.main:app --port 8018 --host 0.0.0.0
-venv_windows\Scripts\python -m uvicorn services.vuln_db.main:app --port 8019 --host 0.0.0.0
-
-# Launch operator console (includes brain demo!)
-venv_windows\Scripts\python -m streamlit run services\console\app.py --server.port 8501 --server.address 0.0.0.0
-
-# Optional: launch offensive toolkit
-venv_windows\Scripts\python -m streamlit run offensive\simple_dashboard.py --server.port 8502 --server.address 0.0.0.0
+# Launch unified interface
+python -m streamlit run services\console\unified_app.py --server.port 8500 --server.address 0.0.0.0
 ```
-Scripts `start.bat` / `stop.bat` and `start.sh` / `stop.sh` orchestrate services automatically.
 
 ## Verification
 ```powershell
