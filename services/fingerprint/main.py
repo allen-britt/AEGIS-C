@@ -14,7 +14,7 @@ from typing import Dict, List
 
 # Add shared module to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
-from service_guard import setup_service_guard, record_detection_score, logger, require_api_key
+from service_guard import setup_service_guard, record_detection_score, logger, require_api_token
 
 # Service Configuration
 SERVICE_NAME = "fingerprint"
@@ -224,7 +224,7 @@ async def root():
     }
 
 # Protected endpoints
-@app.post("/secure/fingerprint", dependencies=[Depends(require_api_key)])
+@app.post("/secure/fingerprint", dependencies=[Depends(require_api_token)])
 async def secure_fingerprint(payload: FingerprintRequest):
     """Protected fingerprinting endpoint"""
     return await fingerprint_model(payload)

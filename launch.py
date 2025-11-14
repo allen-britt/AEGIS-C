@@ -36,6 +36,7 @@ class AegisLauncher:
     def __init__(self):
         self.running_services = {}
         self.shutdown_requested = False
+        self.docker_available = False
         
     def print_banner(self):
         """Print AEGIS-C banner"""
@@ -62,23 +63,55 @@ class AegisLauncher:
             import uvicorn
             import streamlit
             import requests
-            print("✅ Python dependencies available")
+            print("✅ Core Python dependencies available")
         except ImportError as e:
             print(f"❌ Missing dependency: {e}")
-            print("Run: pip install fastapi uvicorn streamlit requests")
-            return False
+            print("Installing missing dependencies...")
+            try:
+                subprocess.run([sys.executable, "-m", "pip", "install", "fastapi", "uvicorn", "streamlit", "requests", "structlog"], check=True)
+                print("✅ Dependencies installed successfully")
+            except subprocess.CalledProcessError:
+                print("❌ Failed to install dependencies. Run: pip install fastapi uvicorn streamlit requests structlog")
+                return False
+        
+        # Check optional dependencies
+        optional_deps = {
+            "plotly": "📊 Charts and visualizations",
+            "pandas": "📈 Data analysis", 
+            "pynvml": "💻 GPU monitoring"
+        }
+        
+        missing_optional = []
+        for dep, description in optional_deps.items():
+            try:
+                __import__(dep)
+                print(f"✅ {description} available")
+            except ImportError:
+                missing_optional.append((dep, description))
+        
+        if missing_optional:
+            print("⚠️  Optional dependencies missing:")
+            for dep, desc in missing_optional:
+                print(f"   • {desc}: pip install {dep}")
+            print("   The platform will work without these, but some features will be limited.")
         
         # Check Docker (optional)
         try:
             subprocess.run(["docker", "--version"], capture_output=True, check=True)
+            self.docker_available = True
             print("✅ Docker available")
-        except:
+        except Exception:
+            self.docker_available = False
             print("⚠️  Docker not available - infrastructure services will be skipped")
         
         return True
     
     def start_infrastructure(self):
         """Start Docker infrastructure services"""
+        if not self.docker_available:
+            print("⏭️  Skipping infrastructure startup (Docker unavailable)")
+            return
+
         print("🏗️  Starting infrastructure services...")
         
         try:
@@ -145,11 +178,30 @@ class AegisLauncher:
                 return False
             else:
                 print(f"   ❌ {name} main.py not found at {main_file}")
+                print(f"   ⏭️  Skipping {name}: entrypoint not found")
                 return False
                 
         except Exception as e:
             print(f"   ❌ Failed to start {name}: {e}")
+            self._terminate_service_process(service_name)
             return False
+
+        # If we reached here service didn't become healthy within timeout
+        self._terminate_service_process(service_name)
+        return False
+
+    def _terminate_service_process(self, service_name: str):
+        """Terminate and remove a tracked service process if present"""
+        process = self.running_services.pop(service_name, None)
+        if not process:
+            return
+        try:
+            process.terminate()
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        except Exception:
+            pass
     
     def start_all_services(self):
         """Start all services in priority order"""

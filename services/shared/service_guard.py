@@ -7,27 +7,40 @@ Standardized authentication, metrics, and health checks for all FastAPI services
 
 import os
 import time
+import logging
 import structlog
 from fastapi import FastAPI, Request, Depends, HTTPException
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from starlette.responses import PlainTextResponse
-from typing import Callable
+from typing import Callable, Dict, Optional
+import jwt
+from datetime import datetime, timedelta
 
 # Configuration
-API_KEY = os.getenv("API_KEY", "changeme-dev")
+API_SECRET = os.getenv("API_SECRET", "changeme-secret-dev")  # Secret for JWT tokens
+TOKEN_EXPIRY_MINUTES = int(os.getenv("TOKEN_EXPIRY_MINUTES", "60"))  # Token expiry time
 SERVICE_NAME = os.getenv("SERVICE_NAME", "unknown")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-# Setup structured logging
+# Setup structured logging using stdlib logger factory to ensure compatibility
+logging.basicConfig(format="%(message)s", level=logging.INFO)
+
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
+        structlog.processors.TimeStamper(fmt="iso"),
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
-        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
         structlog.processors.JSONRenderer()
-    ]
+    ],
+    wrapper_class=structlog.stdlib.BoundLogger,
+    logger_factory=structlog.stdlib.LoggerFactory(),
+    cache_logger_on_first_use=True,
 )
+
 logger = structlog.get_logger()
 
 # Prometheus Metrics
@@ -50,15 +63,38 @@ DETECTION_SCORES = Histogram(
     buckets=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
 )
 
-def require_api_key(request: Request):
-    """Require valid API key for protected endpoints"""
-    api_key = request.headers.get("x-api-key")
-    if api_key != API_KEY:
-        logger.warning("Unauthorized access attempt", 
+def require_api_token(request: Request):
+    """Require valid JWT token for protected endpoints"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        logger.warning("Unauthorized access attempt - Missing or invalid Authorization header", 
                       service=SERVICE_NAME,
                       client_ip=request.client.host if request.client else "unknown")
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return True
+        raise HTTPException(status_code=401, detail="Authorization header missing or invalid")
+    
+    token = auth_header.split("Bearer ")[1]
+    try:
+        payload = jwt.decode(token, API_SECRET, algorithms=["HS256"])
+        if payload.get("exp") < time.time():
+            logger.warning("Unauthorized access attempt - Token expired", 
+                          service=SERVICE_NAME,
+                          client_ip=request.client.host if request.client else "unknown")
+            raise HTTPException(status_code=401, detail="Token expired")
+        return payload
+    except Exception as e:
+        logger.warning(f"Unauthorized access attempt - Invalid token: {str(e)}", 
+                      service=SERVICE_NAME,
+                      client_ip=request.client.host if request.client else "unknown")
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+def generate_api_token(service_id: str) -> str:
+    """Generate a JWT token for a service with expiration"""
+    payload = {
+        "service_id": service_id,
+        "iat": time.time(),
+        "exp": time.time() + (TOKEN_EXPIRY_MINUTES * 60)
+    }
+    return jwt.encode(payload, API_SECRET, algorithm="HS256")
 
 def setup_service_guard(app: FastAPI, service_name: str = None):
     """Setup standardized guard for FastAPI service"""
@@ -83,7 +119,7 @@ def setup_service_guard(app: FastAPI, service_name: str = None):
             media_type=CONTENT_TYPE_LATEST
         )
     
-    @app.get("/secure/ping", dependencies=[Depends(require_api_key)])
+    @app.get("/secure/ping", dependencies=[Depends(require_api_token)])
     async def secure_ping():
         """Protected ping endpoint for authentication testing"""
         return {"pong": True, "service": SERVICE_NAME}
@@ -155,7 +191,7 @@ def setup_service_guard(app: FastAPI, service_name: str = None):
     logger.info("Service guard initialized", service=SERVICE_NAME)
 
 def record_detection_score(score: float, verdict: str):
-    """Record AI detection score for metrics"""
+    """Record detection score for metrics"""
     DETECTION_SCORES.labels(service=SERVICE_NAME, verdict=verdict).observe(score)
     logger.info("Detection score recorded", 
                 service=SERVICE_NAME, 
@@ -165,7 +201,8 @@ def record_detection_score(score: float, verdict: str):
 # Export for use in services
 __all__ = [
     "setup_service_guard",
-    "require_api_key", 
+    "require_api_token", 
+    "generate_api_token",
     "record_detection_score",
     "logger"
 ]

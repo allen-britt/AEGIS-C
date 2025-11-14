@@ -108,7 +108,7 @@ class VulnerabilityDatabase:
                 cvss_vector TEXT,
                 published_date TEXT,
                 modified_date TEXT,
-                references TEXT,
+                reference_links TEXT,
                 affected_packages TEXT,
                 exploit_available BOOLEAN,
                 exploit_difficulty TEXT,
@@ -166,16 +166,28 @@ class VulnerabilityDatabase:
         cursor = conn.cursor()
         
         cursor.execute('''
-            INSERT OR REPLACE INTO cves 
-            (cve_id, title, description, severity, cvss_score, cvss_vector, published_date,
-             modified_date, references, affected_packages, exploit_available, exploit_difficulty,
-             ai_relevant, ai_impact_areas, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO cves (
+                cve_id, title, description, severity, cvss_score, cvss_vector,
+                published_date, modified_date, reference_links, affected_packages,
+                exploit_available, exploit_difficulty, ai_relevant, ai_impact_areas,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
-            cve.cve_id, cve.title, cve.description, cve.severity, cve.cvss_score,
-            cve.cvss_vector, cve.published_date, cve.modified_date, json.dumps(cve.references),
-            json.dumps(cve.affected_packages), cve.exploit_available, cve.exploit_difficulty,
-            cve.ai_relevant, json.dumps(cve.ai_impact_areas or []), datetime.now(timezone.utc).isoformat()
+            cve.cve_id,
+            cve.title,
+            cve.description,
+            cve.severity,
+            cve.cvss_score,
+            cve.cvss_vector,
+            cve.published_date,
+            cve.modified_date,
+            json.dumps(cve.references),
+            json.dumps(cve.affected_packages),
+            cve.exploit_available,
+            cve.exploit_difficulty,
+            cve.ai_relevant,
+            json.dumps(cve.ai_impact_areas or []),
+            datetime.now(timezone.utc).isoformat()
         ))
         
         conn.commit()

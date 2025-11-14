@@ -11,9 +11,19 @@ from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 import math
 import time
+import aiohttp
+import json
 from datetime import datetime, timezone
+import sys
+import os
+
+# Ensure the current directory is in the path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 app = FastAPI(title="AEGIS-C Brain", version="1.0.0")
+
+# Import risk scorer from risk.py using explicit path
+from risk import calculate_adaptive_risk, RiskAssessment
 
 # ---- Schemas ----
 class Signal(BaseModel):
@@ -31,6 +41,7 @@ class RiskResponse(BaseModel):
     level: str = Field(..., description="Risk level: 'info', 'warn', 'high', 'critical'")
     top_features: List[Dict[str, Any]] = Field(..., description="Top contributing features")
     timestamp: str = Field(..., description="Assessment timestamp")
+    cve_impacts: List[str] = Field(default_factory=list, description="CVE impact areas if relevant")
 
 class PolicyRequest(BaseModel):
     subject: str = Field(..., description="Subject identifier")
@@ -45,6 +56,7 @@ class PolicyResponse(BaseModel):
     timestamp: str = Field(..., description="Decision timestamp")
 
 # ---- Configuration ----
+VULN_DB_URL = "http://localhost:8019"  # URL for vuln_db service
 FEATURE_WEIGHTS = {
     "ai_text_score": 1.2,
     "probe_sim": 1.5, 
@@ -58,55 +70,60 @@ FEATURE_WEIGHTS = {
     "hardware_temp": 0.9
 }
 
+# ---- CVE Data Fetching ----
+async def fetch_critical_cves_from_vuln_db() -> List[Dict[str, Any]]:
+    """Fetch critical CVEs from vuln_db service"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{VULN_DB_URL}/threats/critical") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("critical_threats", [])
+                else:
+                    print(f"[{datetime.now().isoformat()}] Failed to fetch CVEs: Status {response.status}")
+                    return []
+    except Exception as e:
+        print(f"[{datetime.now().isoformat()}] Error fetching CVEs from vuln_db: {str(e)}")
+        return []
+
 # ---- Risk Assessment ----
-def _risk(signals: List[Signal]) -> RiskResponse:
-    """Calculate risk using linear model + logistic function"""
+async def _risk(signals: List[Signal]) -> RiskResponse:
+    """Calculate risk using the adaptive risk scorer"""
     start_time = time.time()
     
-    # Linear combination with feature weights
-    z = sum(FEATURE_WEIGHTS.get(s.name, 0.5) * s.value for s in signals) - 3.0
+    # Convert signals to event dictionary for risk scorer
+    event = {s.name: s.value for s in signals}
     
-    # Logistic function
-    probability = 1 / (1 + math.exp(-z))
-    probability = max(0.0, min(1.0, probability))  # Clamp to [0,1]
+    # Fetch critical CVEs from vuln_db service
+    critical_cves = await fetch_critical_cves_from_vuln_db()
     
-    # Risk level classification
-    if probability < 0.2:
-        level = "info"
-    elif probability < 0.5:
-        level = "warn"
-    elif probability < 0.75:
-        level = "high"
-    else:
-        level = "critical"
+    # Calculate risk using the adaptive scorer from risk.py
+    assessment = calculate_adaptive_risk(event, critical_cves)
     
-    # Top contributing features
-    contributions = [
-        {"feature": s.name, "contribution": FEATURE_WEIGHTS.get(s.name, 0.5) * s.value}
-        for s in signals
+    # Prepare response
+    top_features = [
+        {"feature": f[0], "contribution": f[1]}
+        for f in assessment.top_features
     ]
-    top_features = sorted(contributions, key=lambda x: -abs(x["contribution"]))[:3]
-    
-    # Round probability for cleaner output
-    probability = round(probability, 3)
     
     processing_time = (time.time() - start_time) * 1000  # ms
     
     return RiskResponse(
-        probability=probability,
-        level=level,
+        probability=assessment.probability,
+        level=assessment.risk_level,
         top_features=top_features,
-        timestamp=datetime.now(timezone.utc).isoformat()
+        timestamp=assessment.timestamp,
+        cve_impacts=assessment.cve_impacts if assessment.cve_impacts else []
     )
 
 @app.post("/risk", response_model=RiskResponse)
-def assess_risk(request: RiskRequest):
+async def assess_risk(request: RiskRequest):
     """Assess risk for a given subject with signals"""
     try:
         if not request.signals:
             raise HTTPException(status_code=400, detail="At least one signal required")
         
-        result = _risk(request.signals)
+        result = await _risk(request.signals)
         
         print(f"[{datetime.now().isoformat()}] Risk assessment: {request.subject} -> {result.probability} ({result.level})")
         

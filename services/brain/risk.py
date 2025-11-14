@@ -13,10 +13,18 @@ from datetime import datetime, timezone
 from typing import Dict, List, Tuple, Any
 from dataclasses import dataclass
 import logging
+import random
+import aiohttp
 
 # Add shared module to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
-from service_guard import logger, record_detection_score
+try:
+    from service_guard import logger, record_detection_score
+except ImportError:
+    # Fallback if service_guard is not available
+    logger = logging.getLogger(__name__)
+    def record_detection_score(score, verdict):
+        pass
 
 # Feature configuration
 FEATURES = [
@@ -28,7 +36,7 @@ FEATURES = [
     "latency_ms",         # Request latency anomaly
     "agent_anomaly",      # Agent behavior anomaly
     "data_poison_risk",   # Data poisoning risk score
-    "threat_intel_score", # Threat intelligence severity
+    "threat_intel_score", # Threat intelligence severity (enhanced with CVE data)
     "hardware_temp"       # Hardware temperature anomaly
 ]
 
@@ -42,11 +50,30 @@ WEIGHTS = np.array([
     0.8,   # latency_ms
     1.1,   # agent_anomaly
     1.4,   # data_poison_risk
-    1.3,   # threat_intel_score
+    1.3,   # threat_intel_score (will be dynamically adjusted with CVE data)
     0.9    # hardware_temp
 ])
 
 BIAS = -3.0  # Base risk bias
+
+# ---- Configuration ----
+VULN_DB_URL = "http://localhost:8019"  # URL for vuln_db service
+
+# ---- CVE Data Fetching ----
+async def fetch_critical_cves_from_vuln_db() -> List[Dict[str, Any]]:
+    """Fetch critical CVEs from vuln_db service"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{VULN_DB_URL}/threats/critical") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("critical_threats", [])
+                else:
+                    print(f"[{datetime.now().isoformat()}] Failed to fetch CVEs: Status {response.status}")
+                    return []
+    except Exception as e:
+        print(f"[{datetime.now().isoformat()}] Error fetching CVEs from vuln_db: {str(e)}")
+        return []
 
 @dataclass
 class RiskAssessment:
@@ -57,6 +84,7 @@ class RiskAssessment:
     feature_vector: np.ndarray
     timestamp: str
     explanation: str
+    cve_impacts: List[str] = None  # Added to track CVE-related impacts
 
 class AdaptiveRiskScorer:
     """Adaptive risk scoring with learning capabilities"""
@@ -67,13 +95,17 @@ class AdaptiveRiskScorer:
         self.feature_history = []
         self.learning_rate = 0.01
         self.update_count = 0
+        self.decay_factor = 0.95  # Decay factor for older data influence
+        self.min_learning_rate = 0.001  # Minimum learning rate to prevent stagnation
         
     def sigmoid(self, x: float) -> float:
         """Sigmoid activation function"""
         return 1.0 / (1.0 + np.exp(-x))
     
-    def normalize_features(self, event: Dict[str, Any]) -> np.ndarray:
+    def normalize_features(self, event: Dict[str, Any], critical_cves: List[Dict[str, Any]] = None) -> np.ndarray:
         """Normalize and extract features from event"""
+        if critical_cves is None:
+            critical_cves = []
         normalized = []
         
         for feature in FEATURES:
@@ -105,8 +137,9 @@ class AdaptiveRiskScorer:
                 # Already 0-1 range
                 normalized.append(value)
             elif feature == "threat_intel_score":
-                # CVSS score normalized (0-10 range)
-                normalized.append(min(value / 10.0, 1.0))
+                # Enhance with CVE data if available
+                cve_enhanced_score = self.enhance_threat_intel_with_cve(event, critical_cves)
+                normalized.append(min(cve_enhanced_score / 10.0, 1.0))
             elif feature == "hardware_temp":
                 # Temperature delta from baseline (0-50°C range)
                 normalized.append(min(value / 50.0, 1.0))
@@ -115,10 +148,27 @@ class AdaptiveRiskScorer:
         
         return np.array(normalized)
     
-    def calculate_risk(self, event: Dict[str, Any]) -> RiskAssessment:
+    def enhance_threat_intel_with_cve(self, event: Dict[str, Any], critical_cves: List[Dict[str, Any]] = None) -> float:
+        """Enhance threat intelligence score with CVE data if available"""
+        base_score = float(event.get("threat_intel_score", 0))
+        # Use passed critical_cves instead of fetching
+        if critical_cves and any(cve.get('cvss_score', 0) >= 8.0 for cve in critical_cves):
+            # Increase score based on critical CVEs relevant to AI
+            max_cvss = max(cve.get('cvss_score', 0) for cve in critical_cves)
+            return max(base_score, max_cvss)
+        return base_score
+    
+    async def fetch_critical_cves(self) -> List[Dict[str, Any]]:
+        """Fetch critical CVEs from vuln_db service"""
+        return await fetch_critical_cves_from_vuln_db()
+    
+    def calculate_risk(self, event: Dict[str, Any], critical_cves: List[Dict[str, Any]] = None) -> RiskAssessment:
         """Calculate risk probability with explanations"""
+        if critical_cves is None:
+            critical_cves = []
+        
         # Extract and normalize features
-        feature_vector = self.normalize_features(event)
+        feature_vector = self.normalize_features(event, critical_cves)
         
         # Calculate risk score
         z = float(np.dot(feature_vector, self.weights) + self.bias)
@@ -143,8 +193,13 @@ class AdaptiveRiskScorer:
         # Get top contributing features
         top_features = sorted(contributions, key=lambda x: abs(x[1]), reverse=True)[:3]
         
-        # Generate explanation
-        explanation = self._generate_explanation(probability, risk_level, top_features)
+        # Generate explanation and CVE impacts if relevant
+        cve_impacts = []
+        if any("threat_intel_score" in f[0] for f in top_features) and critical_cves:
+            for cve in critical_cves:
+                if cve.get('cvss_score', 0) >= 8.0:
+                    cve_impacts.extend(cve.get('ai_impact_areas', []))
+        explanation = self._generate_explanation(probability, risk_level, top_features, cve_impacts)
         
         # Record metrics
         record_detection_score(probability, f"risk_{risk_level}")
@@ -166,11 +221,12 @@ class AdaptiveRiskScorer:
             top_features=top_features,
             feature_vector=feature_vector,
             timestamp=datetime.now(timezone.utc).isoformat(),
-            explanation=explanation
+            explanation=explanation,
+            cve_impacts=cve_impacts if cve_impacts else []
         )
     
     def _generate_explanation(self, probability: float, risk_level: str, 
-                            top_features: List[Tuple[str, float]]) -> str:
+                            top_features: List[Tuple[str, float]], cve_impacts: List[str] = None) -> str:
         """Generate human-readable explanation"""
         
         # Feature name mapping for readability
@@ -183,7 +239,7 @@ class AdaptiveRiskScorer:
             "latency_ms": "Response latency anomaly",
             "agent_anomaly": "Agent behavior anomaly",
             "data_poison_risk": "Data poisoning indicators",
-            "threat_intel_score": "Threat intelligence severity",
+            "threat_intel_score": "Threat intelligence severity (with CVE data)",
             "hardware_temp": "Hardware temperature anomaly"
         }
         
@@ -208,11 +264,15 @@ class AdaptiveRiskScorer:
         if contributors:
             base += f"Primary drivers: {', '.join(contributors)}."
         
+        # Add CVE impact if relevant
+        if cve_impacts and "threat_intel_score" in [f[0] for f in top_features]:
+            base += f" Critical vulnerabilities impact: {', '.join(set(cve_impacts))}."
+        
         return base
     
     def update_from_outcome(self, event_features: Dict[str, Any], 
                           actual_threat: bool, learning_weight: float = 1.0):
-        """Update model weights based on actual outcomes"""
+        """Update model weights based on actual outcomes with adaptive learning rate"""
         
         # Get original prediction
         feature_vector = self.normalize_features(event_features)
@@ -223,21 +283,62 @@ class AdaptiveRiskScorer:
         target = 1.0 if actual_threat else 0.0
         error = target - predicted_prob
         
-        # Update weights using gradient descent
+        # Adjust learning rate based on error magnitude and update count
+        adjusted_learning_rate = max(self.min_learning_rate, self.learning_rate * (1.0 - self.decay_factor ** self.update_count) * (abs(error) + 0.1))
+        
+        # Update weights using gradient descent with adaptive rate
         gradient = error * predicted_prob * (1 - predicted_prob)
-        weight_update = self.learning_rate * gradient * feature_vector * learning_weight
+        weight_update = adjusted_learning_rate * gradient * feature_vector * learning_weight
         
         self.weights += weight_update
-        self.bias += self.learning_rate * gradient * learning_weight
+        self.bias += adjusted_learning_rate * gradient * learning_weight
         
         self.update_count += 1
         
+        # Log update details for monitoring
         logger.info(
             "Risk model updated",
             error=round(error, 4),
+            learning_rate=round(adjusted_learning_rate, 6),
             weight_change=round(np.linalg.norm(weight_update), 6),
             update_count=self.update_count
         )
+        
+        # Periodically re-evaluate historical data for long-term learning
+        if self.update_count % 100 == 0 and self.feature_history:
+            self._retrain_on_history()
+    
+    def _retrain_on_history(self):
+        """Periodically retrain on historical data to refine weights"""
+        if len(self.feature_history) < 10:
+            return
+        
+        logger.info("Retraining risk model on historical data", history_size=len(self.feature_history))
+        
+        # Sample a subset of historical data for retraining
+        sample_size = min(100, len(self.feature_history))
+        sample_indices = random.sample(range(len(self.feature_history)), sample_size)
+        
+        for idx in sample_indices:
+            historical_entry = self.feature_history[idx]
+            historical_features = historical_entry['features']
+            historical_prob = historical_entry['probability']
+            # Use a pseudo-target based on historical probability trend
+            pseudo_target = 1.0 if historical_prob > 0.7 else 0.0
+            
+            # Recalculate error with reduced weight
+            z = float(np.dot(historical_features, self.weights) + self.bias)
+            current_prob = self.sigmoid(z)
+            error = pseudo_target - current_prob
+            
+            # Apply a smaller update to avoid overfitting
+            gradient = error * current_prob * (1 - current_prob)
+            weight_update = self.min_learning_rate * gradient * historical_features * 0.5
+            
+            self.weights += weight_update
+            self.bias += self.min_learning_rate * gradient * 0.5
+        
+        logger.info("Historical retraining completed", update_count=self.update_count)
     
     def get_feature_importance(self) -> Dict[str, float]:
         """Get current feature importance"""
@@ -272,9 +373,11 @@ class AdaptiveRiskScorer:
 # Global risk scorer instance
 risk_scorer = AdaptiveRiskScorer()
 
-def calculate_adaptive_risk(event: Dict[str, Any]) -> RiskAssessment:
+def calculate_adaptive_risk(event: Dict[str, Any], critical_cves: List[Dict[str, Any]] = None) -> RiskAssessment:
     """Calculate adaptive risk for an event"""
-    return risk_scorer.calculate_risk(event)
+    if critical_cves is None:
+        critical_cves = []
+    return risk_scorer.calculate_risk(event, critical_cves)
 
 def update_risk_model(event_features: Dict[str, Any], actual_threat: bool):
     """Update risk model with actual outcome"""
@@ -298,7 +401,8 @@ def risk(event: Dict[str, Any]) -> Dict[str, Any]:
         "risk_level": assessment.risk_level,
         "top_features": assessment.top_features,
         "explanation": assessment.explanation,
-        "timestamp": assessment.timestamp
+        "timestamp": assessment.timestamp,
+        "cve_impacts": assessment.cve_impacts if assessment.cve_impacts else []
     }
 
 if __name__ == "__main__":

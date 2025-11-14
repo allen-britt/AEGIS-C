@@ -101,7 +101,7 @@ class IntelligenceDatabase:
                 published_date TEXT,
                 modified_date TEXT,
                 affected_products TEXT,
-                references TEXT,
+                reference_links TEXT,
                 ai_relevant BOOLEAN,
                 ai_impact_score REAL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -150,7 +150,7 @@ class IntelligenceDatabase:
         cursor.execute('''
             INSERT OR REPLACE INTO vulnerabilities 
             (cve_id, title, description, severity, cvss_score, published_date, 
-             modified_date, affected_products, references, ai_relevant, ai_impact_score)
+             modified_date, affected_products, reference_links, ai_relevant, ai_impact_score)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             vuln.cve_id, vuln.title, vuln.description, vuln.severity, vuln.cvss_score,

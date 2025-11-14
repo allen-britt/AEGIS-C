@@ -13,7 +13,7 @@ import sys
 
 # Add shared module to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
-from service_guard import setup_service_guard, record_detection_score, logger, require_api_key
+from service_guard import setup_service_guard, record_detection_score, logger, require_api_token
 
 # Service Configuration
 SERVICE_NAME = "detector"
@@ -164,12 +164,12 @@ async def info():
     return await root()
 
 # Protected endpoints
-@app.post("/secure/detect/text", dependencies=[Depends(require_api_key)])
+@app.post("/secure/detect/text", dependencies=[Depends(require_api_token)])
 async def secure_detect_text(payload: TextPayload):
     """Protected text detection"""
     return await detect_text(payload)
 
-@app.post("/secure/detect/agent", dependencies=[Depends(require_api_key)])
+@app.post("/secure/detect/agent", dependencies=[Depends(require_api_token)])
 async def secure_detect_agent(request: Request, payload: AgentPayload):
     """Protected agent detection"""
     return await detect_agent(request, payload)

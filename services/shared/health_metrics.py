@@ -172,7 +172,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             # Record error metrics
             REQUEST_COUNT.labels(
                 method=request.method,
-                endpoint=request.url.url.path,
+                endpoint=request.url.path,
                 status_code=500
             ).inc()
             

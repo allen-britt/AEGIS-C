@@ -21,6 +21,7 @@ AEGIS‑C is a lawful counter‑AI platform that detects adversary AI activity, 
 - **Smart Features:** Active learning, causal analysis, probe generation, hardware intent correlation
 - Detailed design: `docs/technical-overview.md` & `docs/threat-model.md`
 - Intelligence guide: `INTELLIGENCE.md`
+- Full operations walkthrough: `docs/operations-playthrough.md`
 
 ## Quick Start (Local - SIMPLIFIED)
 
@@ -69,12 +70,12 @@ If you prefer manual control:
 python -m uvicorn services.brain.main:app --port 8030 --host 0.0.0.0
 
 # Then start other services (they connect to brain)
-python -m uvicorn services.detector.main:app --port 8010 --host 0.0.0.0
-python -m uvicorn services.fingerprint.main:app --port 8011 --host 0.0.0.0
+python -m uvicorn services.detector.main:app --port 8010 --host localhost
+python -m uvicorn services.fingerprint.main:app --port 8011 --host localhost
 # ... etc for all services
 
 # Launch unified interface
-python -m streamlit run services\console\unified_app.py --server.port 8500 --server.address 0.0.0.0
+python -m streamlit run services\console\unified_app.py --server.port 8500 --server.address localhost
 ```
 
 ## Verification

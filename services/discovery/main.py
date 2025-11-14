@@ -17,10 +17,14 @@ from datetime import datetime, timezone
 import logging
 import asyncio
 import ipaddress
+import os
+import sys
+import aiohttp
+from structlog import get_logger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger()
 
 app = FastAPI(title="AEGIS‑C Target Discovery")
 
@@ -348,6 +352,48 @@ class TargetDiscoveryEngine:
 # Initialize the discovery engine
 discovery_engine = TargetDiscoveryEngine()
 
+# Add simulated exploitation module
+VULN_DB_URL = os.getenv("VULN_DB_URL", "http://localhost:8019")
+
+class SimulationRequest(BaseModel):
+    cve_id: str
+    test_parameters: Optional[Dict[str, Any]] = None
+
+class SimulationResult(BaseModel):
+    cve_id: str
+    test_id: str
+    success: bool
+    impact_level: str
+    details: str
+    timestamp: str
+    logs: List[str]
+
+async def simulate_exploit_attempt(cve_id: str, cve_details: Dict[str, Any], test_parameters: Dict[str, Any] = None) -> SimulationResult:
+    # Simulate exploitation attempt
+    # This is a placeholder, you should implement the actual simulation logic here
+    return SimulationResult(
+        cve_id=cve_id,
+        test_id="test_id",
+        success=True,
+        impact_level="HIGH",
+        details="Exploitation successful",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        logs=["Log 1", "Log 2"]
+    )
+
+async def get_simulation_history(cve_id: str = None, limit: int = 50) -> List[SimulationResult]:
+    # Retrieve simulation history
+    # This is a placeholder, you should implement the actual logic to retrieve simulation history here
+    return [SimulationResult(
+        cve_id="CVE-2022-1234",
+        test_id="test_id",
+        success=True,
+        impact_level="HIGH",
+        details="Exploitation successful",
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        logs=["Log 1", "Log 2"]
+    )]
+
 @app.post("/discovery/scan", response_model=TargetProfile)
 async def scan_target(config: TargetConfig):
     """Initiate target discovery and vulnerability assessment"""
@@ -397,6 +443,38 @@ async def export_findings(format: str = "json"):
     else:
         raise HTTPException(status_code=400, detail="Unsupported export format")
 
+@app.post("/simulate", response_model=SimulationResult)
+async def simulate_exploit(request: SimulationRequest):
+    """Simulate an exploitation attempt for a given CVE"""
+    try:
+        # Fetch CVE details from vuln_db service
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{VULN_DB_URL}/cves/search?query={request.cve_id}") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if data and len(data) > 0:
+                        cve_details = data[0]
+                    else:
+                        raise HTTPException(status_code=404, detail=f"CVE {request.cve_id} not found")
+                else:
+                    raise HTTPException(status_code=500, detail=f"Failed to fetch CVE details: Status {response.status}")
+        
+        # Run simulation
+        result = await simulate_exploit_attempt(request.cve_id, cve_details, request.test_parameters)
+        
+        logger.info(f"Simulation completed for {request.cve_id}: Success={result.success}, Impact={result.impact_level}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Simulation failed for {request.cve_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Simulation failed: {str(e)}")
+
+@app.get("/history", response_model=List[SimulationResult])
+async def get_history(cve_id: Optional[str] = Query(None), limit: int = Query(default=50, le=200)):
+    """Retrieve history of simulated exploit attempts"""
+    history = await get_simulation_history(cve_id, limit)
+    return history
+
 @app.get("/health")
 async def health():
     """Health check endpoint"""
@@ -408,7 +486,8 @@ async def health():
             "service_enumeration", 
             "ai_service_detection",
             "vulnerability_assessment",
-            "defensive_integration"
+            "defensive_integration",
+            "simulated_exploitation"
         ]
     }
 
@@ -425,6 +504,8 @@ async def root():
             "get_vulnerabilities": "/discovery/vulnerabilities",
             "get_target_report": "/discovery/report/{target_host}",
             "export_findings": "/discovery/export",
+            "simulate": "/simulate",
+            "history": "/history",
             "health": "/health"
         }
     }
